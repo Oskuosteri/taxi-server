@@ -11,17 +11,26 @@ wss.on("connection", (ws) => {
   clients.push(ws);
 
   ws.on("message", (message) => {
-    console.log("Received:", message);
-    clients.forEach((client) => {
-      if (client !== ws && client.readyState === ws.OPEN) {
-        client.send(message);
-      }
-    });
+    try {
+      const data = JSON.parse(message); // Tarkista, onko viesti JSON-muodossa
+      console.log("Received:", data);
+      clients.forEach((client) => {
+        if (client !== ws && client.readyState === ws.OPEN) {
+          client.send(JSON.stringify(data)); // Lähetä viesti takaisin JSON-muodossa
+        }
+      });
+    } catch (error) {
+      console.error("Invalid message format:", message);
+    }
   });
 
   ws.on("close", () => {
     console.log("Connection closed");
     clients = clients.filter((client) => client !== ws);
+  });
+
+  ws.on("error", (err) => {
+    console.error("WebSocket error:", err);
   });
 });
 
