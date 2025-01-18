@@ -12,15 +12,20 @@ wss.on("connection", (ws) => {
 
   ws.on("message", (message) => {
     try {
-      const data = JSON.parse(message); // Tarkista, onko viesti JSON-muodossa
+      const data = JSON.parse(message); // Tarkista, että viesti on kelvollista JSON:ia
       console.log("Received:", data);
+
+      // Lähetä viesti vain, jos se on JSON-muodossa
       clients.forEach((client) => {
         if (client !== ws && client.readyState === ws.OPEN) {
-          client.send(JSON.stringify(data)); // Lähetä viesti takaisin JSON-muodossa
+          client.send(JSON.stringify(data)); // Lähetä takaisin JSON-muodossa
         }
       });
     } catch (error) {
-      console.error("Invalid message format:", message);
+      console.error("Invalid message format:", message); // Tulosta virheellinen viesti
+      ws.send(
+        JSON.stringify({ type: "error", message: "Invalid message format" })
+      ); // Palauta virheilmoitus lähettäjälle
     }
   });
 
