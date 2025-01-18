@@ -12,20 +12,18 @@ wss.on("connection", (ws) => {
 
   ws.on("message", (message) => {
     try {
-      const data = JSON.parse(message); // Tarkista, että viesti on kelvollista JSON:ia
+      // Muunna viesti Bufferista stringiksi ja parsitaan JSON-muotoon
+      const data = JSON.parse(message.toString());
       console.log("Received:", data);
 
-      // Lähetä viesti vain, jos se on JSON-muodossa
+      // Lähetä viesti kaikille muille asiakkaille
       clients.forEach((client) => {
         if (client !== ws && client.readyState === ws.OPEN) {
-          client.send(JSON.stringify(data)); // Lähetä takaisin JSON-muodossa
+          client.send(JSON.stringify(data));
         }
       });
     } catch (error) {
-      console.error("Invalid message format:", message); // Tulosta virheellinen viesti
-      ws.send(
-        JSON.stringify({ type: "error", message: "Invalid message format" })
-      ); // Palauta virheilmoitus lähettäjälle
+      console.error("Invalid message format:", message.toString(), error);
     }
   });
 
@@ -39,6 +37,7 @@ wss.on("connection", (ws) => {
   });
 });
 
+// Käytetään Renderin määrittämää porttia
 const port = process.env.PORT || 3000;
 server.listen(port, () => {
   console.log(`Server is running on port ${port}`);
