@@ -20,7 +20,7 @@ wss.on("connection", (ws) => {
       const jsonData = JSON.stringify(data);
       clients.forEach((client) => {
         if (client !== ws && client.readyState === ws.OPEN) {
-          client.send(jsonData);
+          client.send(JSON.stringify(data));
         }
       });
     } catch (error) {
