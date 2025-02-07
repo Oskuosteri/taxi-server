@@ -3,7 +3,7 @@ const http = require("http");
 const express = require("express");
 const WebSocket = require("ws");
 const mongoose = require("mongoose");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
 
