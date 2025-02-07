@@ -15,13 +15,13 @@ const JWT_SECRET = process.env.JWT_SECRET || "salainen-avain";
 const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/taxiapp";
 const PORT = process.env.PORT || 3000;
 
-// 🔗 Yhdistetään MongoDB:hen
+// Yhdistetään MongoDB:hen
 mongoose
   .connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log("✅ MongoDB yhteys muodostettu"))
   .catch((err) => console.error("❌ MongoDB virhe:", err));
 
-// 🔹 Käyttäjä-malli
+// Käyttäjä-malli
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
@@ -29,7 +29,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model("User", userSchema);
 
-// 🔹 Kirjautuminen
+// Kirjautuminen
 app.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -62,7 +62,7 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// 🔹 Rekisteröinti
+// Rekisteröinti
 app.post("/register", async (req, res) => {
   try {
     const { username, password, role } = req.body;
@@ -85,7 +85,7 @@ app.post("/register", async (req, res) => {
   }
 });
 
-// 🔹 WebSocket-palvelin
+// WebSocket-palvelin
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 let drivers = [];
@@ -158,5 +158,5 @@ wss.on("connection", (ws) => {
   });
 });
 
-// 🔹 Käynnistetään serveri
+// Käynnistetään serveri
 server.listen(PORT, () => console.log(`🚀 Serveri käynnissä portissa ${PORT}`));
