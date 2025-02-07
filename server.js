@@ -12,7 +12,7 @@ app.use(express.json());
 app.use(cors({ origin: "*", credentials: true }));
 
 const JWT_SECRET = process.env.JWT_SECRET || "salainen-avain";
-const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/taxiapp";
+const MONGO_URI = process.env.MONGO_URI + "taxiapp";
 const PORT = process.env.PORT || 3000;
 
 // Yhdistetään MongoDB:hen
