@@ -12,7 +12,13 @@ app.use(express.json());
 app.use(cors({ origin: "*", credentials: true }));
 
 const JWT_SECRET = process.env.JWT_SECRET || "salainen-avain";
-const MONGO_URI = process.env.MONGO_URI; // Käytetään suoraan ympäristömuuttujaa
+const MONGO_URI = process.env.MONGO_URI;
+
+if (!MONGO_URI) {
+  console.error("❌ VIRHE: MONGO_URI puuttuu ympäristömuuttujista!");
+  process.exit(1);
+}
+
 const PORT = process.env.PORT || 3000;
 
 // ✅ Yhdistetään MongoDB:hen
