@@ -31,8 +31,8 @@ mongoose
   });
 
 // ✅ Testireitti varmistaaksesi, että serveri toimii
-app.get("/test", (req, res) => {
-  res.json({ message: "🚀 Serveri toimii!" });
+app.get("/", (req, res) => {
+  res.json({ message: "🚀 Tervetuloa TaxiSure API:iin" });
 });
 
 // ✅ Käyttäjä-malli (MongoDB users-kokoelmasta)
@@ -66,9 +66,7 @@ app.post("/login", async (req, res) => {
     const token = jwt.sign(
       { username: user.username, role: user.role },
       JWT_SECRET,
-      {
-        expiresIn: "1h",
-      }
+      { expiresIn: "1h" }
     );
 
     res.json({ token, role: user.role });
@@ -78,7 +76,7 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// ✅ Rekisteröinti
+// ✅ Rekisteröinti (Uuden käyttäjän luonti)
 app.post("/register", async (req, res) => {
   try {
     const { username, password, role } = req.body;
@@ -114,7 +112,9 @@ const authenticateJWT = (token) => {
   }
 };
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws, req) => {
+  console.log("✅ WebSocket-yhteys avattu");
+
   ws.on("message", async (message) => {
     try {
       const data = JSON.parse(message);
