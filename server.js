@@ -9,7 +9,7 @@ const cors = require("cors");
 
 const app = express();
 app.use(express.json());
-app.use(cors({ origin: "*", credentials: true }));
+app.use(cors()); // 🔹 Salli kaikki pyynnöt
 
 const JWT_SECRET = process.env.JWT_SECRET || "salainen-avain";
 const MONGO_URI = process.env.MONGO_URI;
