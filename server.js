@@ -8,8 +8,8 @@ const jwt = require("jsonwebtoken");
 const cors = require("cors");
 
 const app = express();
-app.use(express.json());
-app.use(cors()); // 🔹 Salli kaikki pyynnöt
+app.use(express.json()); // ✅ Varmistaa, että Express voi käsitellä JSON-dataa
+app.use(cors()); // ✅ Sallii kaikki pyynnöt (voit rajoittaa tarpeen mukaan)
 
 const JWT_SECRET = process.env.JWT_SECRET || "salainen-avain";
 const MONGO_URI = process.env.MONGO_URI;
@@ -24,10 +24,17 @@ const PORT = process.env.PORT || 3000;
 // ✅ Yhdistetään MongoDB:hen
 mongoose
   .connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log("✅ MongoDB yhteys muodostettu"))
+  .then(() => {
+    console.log("✅ MongoDB yhteys muodostettu");
+
+    // ✅ Käynnistetään palvelin vasta kun MongoDB on yhdistetty
+    server.listen(PORT, () =>
+      console.log(`🚀 Serveri käynnissä portissa ${PORT}`)
+    );
+  })
   .catch((err) => {
     console.error("❌ MongoDB virhe:", err);
-    process.exit(1); // Lopetetaan palvelin, jos yhteys epäonnistuu
+    process.exit(1);
   });
 
 // ✅ Testireitti varmistaaksesi, että serveri toimii
@@ -43,7 +50,21 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model("User", userSchema);
 
-// ✅ Kirjautuminen
+// ✅ Middleware JWT-tokenin tarkistukseen
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers["authorization"];
+  if (!authHeader) return res.status(403).json({ error: "Token puuttuu" });
+
+  const token = authHeader.split(" ")[1];
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) return res.status(401).json({ error: "Virheellinen token" });
+
+    req.user = decoded; // ✅ Tallennetaan käyttäjän tiedot req-olioon
+    next();
+  });
+};
+
+// ✅ Kirjautuminen (POST /login)
 app.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -76,7 +97,7 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// ✅ Rekisteröinti (Uuden käyttäjän luonti)
+// ✅ Rekisteröinti (POST /register)
 app.post("/register", async (req, res) => {
   try {
     const { username, password, role } = req.body;
@@ -104,15 +125,7 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 let drivers = [];
 
-const authenticateJWT = (token) => {
-  try {
-    return jwt.verify(token, JWT_SECRET);
-  } catch (err) {
-    return null;
-  }
-};
-
-wss.on("connection", (ws, req) => {
+wss.on("connection", (ws) => {
   console.log("✅ WebSocket-yhteys avattu");
 
   ws.on("message", async (message) => {
@@ -125,7 +138,14 @@ wss.on("connection", (ws, req) => {
         return;
       }
 
-      const decoded = authenticateJWT(data.token);
+      // ✅ Tarkistetaan token
+      if (!data.token) {
+        ws.send(
+          JSON.stringify({ type: "auth_error", message: "Token puuttuu" })
+        );
+        return;
+      }
+      const decoded = jwt.verify(data.token, JWT_SECRET);
       if (!decoded) {
         ws.send(
           JSON.stringify({ type: "auth_error", message: "Virheellinen token" })
@@ -133,6 +153,7 @@ wss.on("connection", (ws, req) => {
         return;
       }
 
+      // ✅ Käsitellään WebSocket-viestit
       if (data.type === "driver_login" && decoded.role === "driver") {
         drivers.push({ id: decoded.username, ws, isWorking: false });
         ws.send(JSON.stringify({ type: "login_success" }));
@@ -149,13 +170,10 @@ wss.on("connection", (ws, req) => {
           ws.send(JSON.stringify({ type: "shift_stopped" }));
         }
       } else if (data.type === "driver_location") {
-        const driver = drivers.find((d) => d.id === decoded.username);
-        if (driver) {
-          console.log(
-            `📍 ${decoded.username} sijainti päivitetty:`,
-            data.location
-          );
-        }
+        console.log(
+          `📍 ${decoded.username} sijainti päivitetty:`,
+          data.location
+        );
       } else {
         ws.send(
           JSON.stringify({ type: "error", message: "Tuntematon viesti" })
@@ -174,5 +192,7 @@ wss.on("connection", (ws, req) => {
   });
 });
 
-// ✅ Käynnistetään serveri
-server.listen(PORT, () => console.log(`🚀 Serveri käynnissä portissa ${PORT}`));
+// ✅ Suojattu reitti
+app.get("/protected", authenticateToken, (req, res) => {
+  res.json({ message: "Pääsy myönnetty, tervetuloa!", user: req.user });
+});
