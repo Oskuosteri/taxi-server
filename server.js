@@ -8,8 +8,8 @@ const jwt = require("jsonwebtoken");
 const cors = require("cors");
 
 const app = express();
-app.use(express.json()); // ✅ Varmistaa, että Express voi käsitellä JSON-dataa
-app.use(cors()); // ✅ Sallii kaikki pyynnöt (voit rajoittaa tarpeen mukaan)
+app.use(express.json());
+app.use(cors());
 
 const JWT_SECRET = process.env.JWT_SECRET || "salainen-avain";
 const MONGO_URI = process.env.MONGO_URI;
@@ -26,8 +26,6 @@ mongoose
   .connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => {
     console.log("✅ MongoDB yhteys muodostettu");
-
-    // ✅ Käynnistetään palvelin vasta kun MongoDB on yhdistetty
     server.listen(PORT, () =>
       console.log(`🚀 Serveri käynnissä portissa ${PORT}`)
     );
@@ -37,12 +35,12 @@ mongoose
     process.exit(1);
   });
 
-// ✅ Testireitti varmistaaksesi, että serveri toimii
+// ✅ Testireitti
 app.get("/", (req, res) => {
   res.json({ message: "🚀 Tervetuloa TaxiSure API:iin" });
 });
 
-// ✅ Käyttäjä-malli (MongoDB users-kokoelmasta)
+// ✅ Käyttäjä-malli (MongoDB)
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
@@ -50,7 +48,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model("User", userSchema);
 
-// ✅ Middleware JWT-tokenin tarkistukseen
+// ✅ Middleware JWT-tunnistautumiseen
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
   if (!authHeader) return res.status(403).json({ error: "Token puuttuu" });
@@ -59,7 +57,7 @@ const authenticateToken = (req, res, next) => {
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) return res.status(401).json({ error: "Virheellinen token" });
 
-    req.user = decoded; // ✅ Tallennetaan käyttäjän tiedot req-olioon
+    req.user = decoded;
     next();
   });
 };
@@ -87,7 +85,9 @@ app.post("/login", async (req, res) => {
     const token = jwt.sign(
       { username: user.username, role: user.role },
       JWT_SECRET,
-      { expiresIn: "1h" }
+      {
+        expiresIn: "1h",
+      }
     );
 
     res.json({ token, role: user.role });
@@ -131,6 +131,8 @@ wss.on("connection", (ws) => {
   ws.on("message", async (message) => {
     try {
       const data = JSON.parse(message);
+      console.log("📩 Palvelin vastaanotti viestin:", data);
+
       if (!data.type) {
         ws.send(
           JSON.stringify({ type: "error", message: "Viestityyppi puuttuu" })
@@ -153,26 +155,41 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      // ✅ Käsitellään WebSocket-viestit
+      // ✅ Kuljettaja kirjautuu WebSocketiin
       if (data.type === "driver_login" && decoded.role === "driver") {
         drivers.push({ id: decoded.username, ws, isWorking: false });
         ws.send(JSON.stringify({ type: "login_success" }));
-      } else if (data.type === "start_shift") {
+      }
+
+      // ✅ Kuljettaja aloittaa työvuoron
+      else if (data.type === "start_shift") {
         const driver = drivers.find((d) => d.id === decoded.username);
         if (driver) {
           driver.isWorking = true;
           ws.send(JSON.stringify({ type: "shift_started" }));
         }
-      } else if (data.type === "stop_shift") {
-        const driver = drivers.find((d) => d.id === decoded.username);
-        if (driver) {
-          driver.isWorking = false;
-          ws.send(JSON.stringify({ type: "shift_stopped" }));
-        }
-      } else if (data.type === "driver_location") {
-        console.log(
-          `📍 ${decoded.username} sijainti päivitetty:`,
-          data.location
+      }
+
+      // ✅ Kuljettaja vastaanottaa kyytipyynnön
+      else if (data.type === "ride_request") {
+        console.log("🚖 Uusi kyytipyyntö vastaanotettu!");
+
+        // Lähetetään pyyntö kaikille kuljettajille
+        drivers.forEach((driver) => {
+          if (driver.isWorking) {
+            driver.ws.send(JSON.stringify(data));
+          }
+        });
+      }
+
+      // ✅ Kuljettaja hyväksyy kyytipyynnön
+      else if (data.type === "ride_accepted") {
+        console.log("✅ Kuljettaja hyväksyi kyytipyynnön");
+        ws.send(
+          JSON.stringify({
+            type: "ride_confirmed",
+            message: "Kuljettaja on matkalla noutamaan sinua!",
+          })
         );
       } else {
         ws.send(
@@ -190,9 +207,4 @@ wss.on("connection", (ws) => {
   ws.on("close", () => {
     drivers = drivers.filter((driver) => driver.ws !== ws);
   });
-});
-
-// ✅ Suojattu reitti
-app.get("/protected", authenticateToken, (req, res) => {
-  res.json({ message: "Pääsy myönnetty, tervetuloa!", user: req.user });
 });
