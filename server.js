@@ -85,9 +85,7 @@ app.post("/login", async (req, res) => {
     const token = jwt.sign(
       { username: user.username, role: user.role },
       JWT_SECRET,
-      {
-        expiresIn: "1h",
-      }
+      { expiresIn: "1h" }
     );
 
     res.json({ token, role: user.role });
@@ -140,17 +138,20 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      // ✅ Tarkistetaan token
+      // ✅ Token tarkistus
       if (!data.token) {
         ws.send(
           JSON.stringify({ type: "auth_error", message: "Token puuttuu" })
         );
         return;
       }
-      const decoded = jwt.verify(data.token, JWT_SECRET);
-      if (!decoded) {
+
+      let decoded;
+      try {
+        decoded = jwt.verify(data.token, JWT_SECRET);
+      } catch (err) {
         ws.send(
-          JSON.stringify({ type: "auth_error", message: "Virheellinen token" })
+          JSON.stringify({ type: "auth_error", message: "Token vanhentunut" })
         );
         return;
       }
@@ -170,11 +171,9 @@ wss.on("connection", (ws) => {
         }
       }
 
-      // ✅ Kuljettaja vastaanottaa kyytipyynnön
+      // ✅ Asiakas lähettää kyytipyynnön
       else if (data.type === "ride_request") {
         console.log("🚖 Uusi kyytipyyntö vastaanotettu!");
-
-        // Lähetetään pyyntö kaikille kuljettajille
         drivers.forEach((driver) => {
           if (driver.isWorking) {
             driver.ws.send(JSON.stringify(data));
@@ -185,12 +184,18 @@ wss.on("connection", (ws) => {
       // ✅ Kuljettaja hyväksyy kyytipyynnön
       else if (data.type === "ride_accepted") {
         console.log("✅ Kuljettaja hyväksyi kyytipyynnön");
-        ws.send(
-          JSON.stringify({
-            type: "ride_confirmed",
-            message: "Kuljettaja on matkalla noutamaan sinua!",
-          })
+        const customerWs = [...wss.clients].find(
+          (client) => client !== ws && client.readyState === WebSocket.OPEN
         );
+
+        if (customerWs) {
+          customerWs.send(
+            JSON.stringify({
+              type: "ride_confirmed",
+              message: "Kuljettaja on matkalla noutamaan sinua!",
+            })
+          );
+        }
       } else {
         ws.send(
           JSON.stringify({ type: "error", message: "Tuntematon viesti" })
