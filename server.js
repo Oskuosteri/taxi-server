@@ -217,7 +217,7 @@ wss.on("connection", (ws) => {
 
       // ✅ Kuljettajan hyväksymä kyyti
       else if (data.type === "ride_accepted") {
-        console.log(`✅ Kuljettaja ${decoded.username} hyväksyi kyytipyynnön.`);
+        console.log(`✅ Kuljettaja ${decoded.username} hyväksyi kyydin.`);
 
         const driver = drivers.find((d) => d.id === decoded.username);
         if (!driver) {
