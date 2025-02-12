@@ -138,7 +138,6 @@ wss.on("connection", (ws) => {
         return;
       }
 
-      // ✅ Token tarkistus
       if (!data.token) {
         ws.send(
           JSON.stringify({ type: "auth_error", message: "Token puuttuu" })
@@ -151,18 +150,21 @@ wss.on("connection", (ws) => {
         decoded = jwt.verify(data.token, JWT_SECRET);
       } catch (err) {
         ws.send(
-          JSON.stringify({ type: "auth_error", message: "Token vanhentunut" })
+          JSON.stringify({
+            type: "auth_error",
+            message: "Virheellinen tai vanhentunut token",
+          })
         );
         return;
       }
 
-      // ✅ Kuljettaja kirjautuu WebSocketiin
+      // ✅ Kuljettajan kirjautuminen WebSocketiin
       if (data.type === "driver_login" && decoded.role === "driver") {
         drivers.push({ id: decoded.username, ws, isWorking: false });
         ws.send(JSON.stringify({ type: "login_success" }));
       }
 
-      // ✅ Kuljettaja aloittaa työvuoron
+      // ✅ Kuljettajan työvuoron aloitus
       else if (data.type === "start_shift") {
         const driver = drivers.find((d) => d.id === decoded.username);
         if (driver) {
@@ -171,31 +173,50 @@ wss.on("connection", (ws) => {
         }
       }
 
-      // ✅ Asiakas lähettää kyytipyynnön
-      else if (data.type === "ride_request") {
-        console.log("🚖 Uusi kyytipyyntö vastaanotettu!");
-        drivers.forEach((driver) => {
-          if (driver.isWorking) {
-            driver.ws.send(JSON.stringify(data));
-          }
-        });
+      // ✅ Kuljettajan työvuoron lopetus
+      else if (data.type === "stop_shift") {
+        const driver = drivers.find((d) => d.id === decoded.username);
+        if (driver) {
+          driver.isWorking = false;
+          ws.send(JSON.stringify({ type: "shift_stopped" }));
+        }
       }
 
-      // ✅ Kuljettaja hyväksyy kyytipyynnön
-      else if (data.type === "ride_accepted") {
-        console.log("✅ Kuljettaja hyväksyi kyytipyynnön");
-        const customerWs = [...wss.clients].find(
-          (client) => client !== ws && client.readyState === WebSocket.OPEN
+      // ✅ Asiakkaan kyytipyynnön käsittely
+      else if (data.type === "ride_request") {
+        console.log("🚖 Uusi kyytipyyntö vastaanotettu palvelimella:", data);
+
+        const availableDrivers = drivers.filter((d) => d.isWorking);
+        console.log(
+          `📢 Lähetetään kyytipyyntö ${availableDrivers.length} kuljettajalle`
         );
 
-        if (customerWs) {
-          customerWs.send(
+        if (availableDrivers.length === 0) {
+          ws.send(
             JSON.stringify({
-              type: "ride_confirmed",
-              message: "Kuljettaja on matkalla noutamaan sinua!",
+              type: "error",
+              message: "Ei vapaita kuljettajia saatavilla",
             })
           );
+        } else {
+          availableDrivers.forEach((driver) => {
+            if (driver.ws.readyState === WebSocket.OPEN) {
+              driver.ws.send(JSON.stringify(data));
+            }
+          });
         }
+      }
+
+      // ✅ Kuljettajan kyytipyyntöön vastaaminen
+      else if (data.type === "ride_accepted") {
+        console.log("✅ Kuljettaja hyväksyi kyytipyynnön:", data);
+
+        ws.send(
+          JSON.stringify({
+            type: "ride_confirmed",
+            message: "Kuljettaja on matkalla noutamaan sinua!",
+          })
+        );
       } else {
         ws.send(
           JSON.stringify({ type: "error", message: "Tuntematon viesti" })
