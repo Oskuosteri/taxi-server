@@ -160,8 +160,14 @@ wss.on("connection", (ws) => {
 
       // ✅ Kuljettajan kirjautuminen WebSocketiin
       if (data.type === "driver_login" && decoded.role === "driver") {
-        drivers.push({ id: decoded.username, ws, isWorking: false });
+        drivers.push({
+          id: decoded.username,
+          ws,
+          isWorking: false,
+          token: data.token,
+        });
         ws.send(JSON.stringify({ type: "login_success" }));
+        console.log(`🚖 Kuljettaja ${decoded.username} kirjautui sisään.`);
       }
 
       // ✅ Kuljettajan työvuoron aloitus
@@ -170,6 +176,7 @@ wss.on("connection", (ws) => {
         if (driver) {
           driver.isWorking = true;
           ws.send(JSON.stringify({ type: "shift_started" }));
+          console.log(`🟢 Kuljettaja ${decoded.username} aloitti työvuoron.`);
         }
       }
 
@@ -179,6 +186,7 @@ wss.on("connection", (ws) => {
         if (driver) {
           driver.isWorking = false;
           ws.send(JSON.stringify({ type: "shift_stopped" }));
+          console.log(`🔴 Kuljettaja ${decoded.username} lopetti työvuoron.`);
         }
       }
 
@@ -207,16 +215,46 @@ wss.on("connection", (ws) => {
         }
       }
 
-      // ✅ Kuljettajan kyytipyyntöön vastaaminen
+      // ✅ Kuljettajan hyväksymä kyyti
       else if (data.type === "ride_accepted") {
-        console.log("✅ Kuljettaja hyväksyi kyytipyynnön:", data);
+        console.log(`✅ Kuljettaja ${decoded.username} hyväksyi kyytipyynnön.`);
+
+        const driver = drivers.find((d) => d.id === decoded.username);
+        if (!driver) {
+          ws.send(
+            JSON.stringify({ type: "error", message: "Kuljettajaa ei löydy" })
+          );
+          return;
+        }
+
+        if (!driver.token) {
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              message: "Kuljettajan token puuttuu",
+            })
+          );
+          return;
+        }
 
         ws.send(
           JSON.stringify({
             type: "ride_confirmed",
-            message: "Kuljettaja on matkalla noutamaan sinua!",
+            message: "Kuljettaja on matkalla!",
           })
         );
+
+        // 🔹 Lähetetään hyväksymisilmoitus asiakassovellukselle
+        wss.clients.forEach((client) => {
+          if (client.readyState === WebSocket.OPEN) {
+            client.send(
+              JSON.stringify({
+                type: "ride_confirmed",
+                message: `Kuljettaja ${decoded.username} on matkalla!`,
+              })
+            );
+          }
+        });
       } else {
         ws.send(
           JSON.stringify({ type: "error", message: "Tuntematon viesti" })
