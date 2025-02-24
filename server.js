@@ -6,10 +6,13 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
+const bodyParser = require("body-parser");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 app.use(express.json());
 app.use(cors());
+app.use(bodyParser.json());
 
 const JWT_SECRET = process.env.JWT_SECRET || "salainen-avain";
 const MONGO_URI = process.env.MONGO_URI;
@@ -26,9 +29,6 @@ mongoose
   .connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => {
     console.log("✅ MongoDB yhteys muodostettu");
-    server.listen(PORT, () =>
-      console.log(`🚀 Serveri käynnissä portissa ${PORT}`)
-    );
   })
   .catch((err) => {
     console.error("❌ MongoDB virhe:", err);
@@ -92,6 +92,27 @@ app.post("/login", async (req, res) => {
   } catch (error) {
     console.error("❌ Kirjautumisvirhe:", error);
     res.status(500).json({ error: "Sisäinen palvelinvirhe" });
+  }
+});
+
+app.post("/create-payment-intent", async (req, res) => {
+  try {
+    const { amount } = req.body;
+
+    if (!amount) {
+      return res.status(400).json({ error: "Määrä puuttuu" });
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(amount * 100), // Stripe käyttää senttejä
+      currency: "eur",
+      payment_method_types: ["card"],
+    });
+
+    res.json({ clientSecret: paymentIntent.client_secret });
+  } catch (error) {
+    console.error("❌ Stripe-virhe:", error);
+    res.status(500).json({ error: "Maksun luonti epäonnistui" });
   }
 });
 
@@ -272,3 +293,5 @@ wss.on("connection", (ws) => {
     drivers = drivers.filter((driver) => driver.ws !== ws);
   });
 });
+
+server.listen(PORT, () => console.log(`🚀 Serveri käynnissä portissa ${PORT}`));
