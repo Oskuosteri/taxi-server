@@ -289,6 +289,34 @@ wss.on("connection", (ws) => {
     }
   });
 
+  app.post("/create-checkout-session", async (req, res) => {
+    try {
+      const { amount } = req.body;
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        mode: "payment",
+        line_items: [
+          {
+            price_data: {
+              currency: "eur",
+              product_data: { name: "Taksimatka" },
+              unit_amount: Math.round(amount * 100), // Centteinä
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: "https://yourapp.com/success",
+        cancel_url: "https://yourapp.com/cancel",
+      });
+
+      res.json({ id: session.id });
+    } catch (error) {
+      console.error("Stripe error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   ws.on("close", () => {
     drivers = drivers.filter((driver) => driver.ws !== ws);
   });
