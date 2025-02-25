@@ -85,7 +85,7 @@ app.post("/login", async (req, res) => {
     const token = jwt.sign(
       { username: user.username, role: user.role },
       JWT_SECRET,
-      { expiresIn: "1h" }
+      { expiresIn: "6h" } // ✅ Pidempi voimassaoloaika
     );
 
     res.json({ token, role: user.role });
