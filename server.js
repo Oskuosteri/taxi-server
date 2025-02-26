@@ -293,6 +293,10 @@ wss.on("connection", (ws) => {
     try {
       const { amount } = req.body;
 
+      if (!amount || amount <= 0) {
+        return res.status(400).json({ error: "Virheellinen summa" });
+      }
+
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ["card"],
         mode: "payment",
@@ -300,20 +304,20 @@ wss.on("connection", (ws) => {
           {
             price_data: {
               currency: "eur",
-              product_data: { name: "Taksimatka" },
-              unit_amount: Math.round(amount * 100), // Centteinä
+              product_data: { name: "Taksi kyyti" },
+              unit_amount: Math.round(amount * 100), // Stripe käyttää senttejä
             },
             quantity: 1,
           },
         ],
-        success_url: "https://yourapp.com/success",
-        cancel_url: "https://yourapp.com/cancel",
+        success_url: "mytaxiapp://success?session_id={CHECKOUT_SESSION_ID}",
+        cancel_url: "mytaxiapp://cancel",
       });
 
-      res.json({ id: session.id });
+      res.json({ url: session.url });
     } catch (error) {
-      console.error("Stripe error:", error);
-      res.status(500).json({ error: error.message });
+      console.error("❌ Stripe error:", error);
+      res.status(500).json({ error: "Maksusession luonti epäonnistui" });
     }
   });
 
