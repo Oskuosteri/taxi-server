@@ -266,15 +266,7 @@ wss.on("connection", (ws) => {
       else if (data.type === "ride_accepted") {
         console.log(`✅ Kuljettaja ${decoded.username} hyväksyi kyydin.`);
 
-        const driver = drivers.find((d) => d.id === decoded.username);
-        if (!driver) {
-          ws.send(
-            JSON.stringify({ type: "error", message: "Kuljettajaa ei löydy" })
-          );
-          return;
-        }
-
-        // Hae kuljettajan tiedot MongoDB:stä
+        // Haetaan vain hyväksyneen kuljettajan tiedot MongoDB:stä
         const driverData = await User.findOne({ username: decoded.username });
 
         if (!driverData) {
@@ -287,6 +279,7 @@ wss.on("connection", (ws) => {
           return;
         }
 
+        // 🔹 Lähetetään asiakkaalle hyväksyneen kuljettajan tiedot
         const rideConfirmedMessage = {
           type: "ride_confirmed",
           driverName: driverData.username,
@@ -298,7 +291,9 @@ wss.on("connection", (ws) => {
           licensePlate: driverData.licensePlate || "???-???",
         };
 
-        // Lähetetään asiakkaalle tieto hyväksytystä kyydistä
+        console.log("📡 Lähetetään asiakkaalle:", rideConfirmedMessage);
+
+        // Lähetetään vain asiakkaalle, joka pyysi kyytiä
         ws.send(JSON.stringify(rideConfirmedMessage));
 
         wss.clients.forEach((client) => {
