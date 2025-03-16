@@ -7,12 +7,15 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const bodyParser = require("body-parser");
+const multer = require("multer");
+const path = require("path");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 app.use(bodyParser.json());
+app.use("/uploads", express.static("uploads")); // 🔥 Mahdollistaa kuvien näyttämisen
 
 const JWT_SECRET = process.env.JWT_SECRET || "salainen-avain";
 const MONGO_URI = process.env.MONGO_URI;
@@ -35,6 +38,15 @@ mongoose
     process.exit(1);
   });
 
+// ✅ Määritetään Multer tallentamaan kuvat palvelimelle
+const storage = multer.diskStorage({
+  destination: "./uploads/",
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname)); // Uniikki tiedostonimi
+  },
+});
+const upload = multer({ storage: storage });
+
 // ✅ Testireitti
 app.get("/", (req, res) => {
   res.json({ message: "🚀 Tervetuloa TaxiSure API:iin" });
@@ -45,7 +57,13 @@ const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   role: { type: String, enum: ["client", "driver"], required: true },
+  name: String,
+  carModel: String,
+  licensePlate: String,
+  profileImage: String, // Kuvan polku
+  carImage: String, // Kuvan polku
 });
+
 const User = mongoose.model("User", userSchema);
 
 // ✅ Middleware JWT-tunnistautumiseen
@@ -61,6 +79,14 @@ const authenticateToken = (req, res, next) => {
     next();
   });
 };
+
+// ✅ Kuvien lataus (POST /upload)
+app.post("/upload", upload.single("image"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "Kuvaa ei löytynyt" });
+  }
+  res.json({ success: true, imagePath: req.file.path });
+});
 
 // ✅ Kirjautuminen (POST /login)
 app.post("/login", async (req, res) => {
@@ -248,32 +274,36 @@ wss.on("connection", (ws) => {
           return;
         }
 
-        if (!driver.token) {
+        // Hae kuljettajan tiedot MongoDB:stä
+        const driverData = await User.findOne({ username: decoded.username });
+
+        if (!driverData) {
           ws.send(
             JSON.stringify({
               type: "error",
-              message: "Kuljettajan token puuttuu",
+              message: "Kuljettajan tietoja ei löytynyt",
             })
           );
           return;
         }
 
-        ws.send(
-          JSON.stringify({
-            type: "ride_confirmed",
-            message: "Kuljettaja on matkalla!",
-          })
-        );
+        const rideConfirmedMessage = {
+          type: "ride_confirmed",
+          driverName: driverData.username,
+          driverImage:
+            driverData.driverImage || "https://example.com/default-driver.jpg",
+          carImage:
+            driverData.carImage || "https://example.com/default-car.jpg",
+          carModel: driverData.carModel || "Tuntematon auto",
+          licensePlate: driverData.licensePlate || "???-???",
+        };
 
-        // 🔹 Lähetetään hyväksymisilmoitus asiakassovellukselle
+        // Lähetetään asiakkaalle tieto hyväksytystä kyydistä
+        ws.send(JSON.stringify(rideConfirmedMessage));
+
         wss.clients.forEach((client) => {
           if (client.readyState === WebSocket.OPEN) {
-            client.send(
-              JSON.stringify({
-                type: "ride_confirmed",
-                message: `Kuljettaja ${decoded.username} on matkalla!`,
-              })
-            );
+            client.send(JSON.stringify(rideConfirmedMessage));
           }
         });
       } else {
