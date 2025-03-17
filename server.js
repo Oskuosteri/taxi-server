@@ -282,15 +282,13 @@ wss.on("connection", (ws) => {
         // 🔹 Lähetetään asiakkaalle hyväksyneen kuljettajan tiedot
         const rideConfirmedMessage = {
           type: "ride_confirmed",
-          driverName: driverData.name || "Tuntematon kuljettaja",
-          driverImage:
-            driverData.driverImage && driverData.driverImage.startsWith("http")
-              ? driverData.driverImage
-              : "https://example.com/default-driver.jpg",
-          carImage:
-            driverData.carImage && driverData.carImage.startsWith("http")
-              ? driverData.carImage
-              : "https://example.com/default-car.jpg",
+          driverName: driverData.username,
+          driverImage: driverData.profileImage
+            ? driverData.profileImage
+            : "https://example.com/default-driver.jpg",
+          carImage: driverData.carImage
+            ? driverData.carImage
+            : "https://example.com/default-car.jpg",
           carModel: driverData.carModel || "Tuntematon auto",
           licensePlate: driverData.licensePlate || "???-???",
         };
