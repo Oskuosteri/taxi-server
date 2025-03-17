@@ -286,10 +286,14 @@ wss.on("connection", (ws) => {
         const rideConfirmedMessage = {
           type: "ride_confirmed",
           driverName: driverData.username,
-          driverImage: driverData.driverImage,
-          carImage: driverData.carImage,
-          carModel: driverData.carModel,
-          licensePlate: driverData.licensePlate,
+          driverImage: driverData.driverImage
+            ? driverData.driverImage.trim()
+            : "https://example.com/default-driver.jpg",
+          carImage: driverData.carImage
+            ? driverData.carImage.trim()
+            : "https://example.com/default-car.jpg",
+          carModel: driverData.carModel || "Tuntematon auto",
+          licensePlate: driverData.licensePlate || "???-???",
         };
 
         console.log("📡 Lähetetään asiakkaalle:", rideConfirmedMessage);
