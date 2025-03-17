@@ -269,6 +269,9 @@ wss.on("connection", (ws) => {
         // Haetaan vain hyväksyneen kuljettajan tiedot MongoDB:stä
         const driverData = await User.findOne({ username: decoded.username });
 
+        // 🟢 Debuggaus: Tulostetaan MongoDB:stä löytynyt data
+        console.log("🟢 Kuljettajan tiedot MongoDB:stä:", driverData);
+
         if (!driverData) {
           ws.send(
             JSON.stringify({
@@ -283,14 +286,10 @@ wss.on("connection", (ws) => {
         const rideConfirmedMessage = {
           type: "ride_confirmed",
           driverName: driverData.username,
-          driverImage: driverData.profileImage
-            ? driverData.profileImage
-            : "https://example.com/default-driver.jpg",
-          carImage: driverData.carImage
-            ? driverData.carImage
-            : "https://example.com/default-car.jpg",
-          carModel: driverData.carModel || "Tuntematon auto",
-          licensePlate: driverData.licensePlate || "???-???",
+          driverImage: driverData.driverImage,
+          carImage: driverData.carImage,
+          carModel: driverData.carModel,
+          licensePlate: driverData.licensePlate,
         };
 
         console.log("📡 Lähetetään asiakkaalle:", rideConfirmedMessage);
