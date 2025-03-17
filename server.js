@@ -286,12 +286,14 @@ wss.on("connection", (ws) => {
         const rideConfirmedMessage = {
           type: "ride_confirmed",
           driverName: driverData.username,
-          driverImage: driverData.driverImage
-            ? driverData.driverImage.trim()
-            : "https://example.com/default-driver.jpg",
-          carImage: driverData.carImage
-            ? driverData.carImage.trim()
-            : "https://example.com/default-car.jpg",
+          driverImage:
+            driverData.driverImage && driverData.driverImage.trim() !== ""
+              ? driverData.driverImage.trim()
+              : "https://example.com/default-driver.jpg",
+          carImage:
+            driverData.carImage && driverData.carImage.trim() !== ""
+              ? driverData.carImage.trim()
+              : "https://example.com/default-car.jpg",
           carModel: driverData.carModel || "Tuntematon auto",
           licensePlate: driverData.licensePlate || "???-???",
         };
