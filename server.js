@@ -260,6 +260,32 @@ wss.on("connection", (ws) => {
             }
           });
         }
+      } else if (data.type === "update_location") {
+        const driver = drivers.find((d) => d.id === decoded.username);
+        if (driver) {
+          driver.location = {
+            latitude: data.latitude,
+            longitude: data.longitude,
+          };
+          console.log(
+            `📍 Kuljettajan ${decoded.username} sijainti päivitetty:`,
+            driver.location
+          );
+
+          // Lähetetään päivitetty sijainti asiakkaille
+          wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(
+                JSON.stringify({
+                  type: "driver_location_update",
+                  driverId: decoded.username,
+                  latitude: data.latitude,
+                  longitude: data.longitude,
+                })
+              );
+            }
+          });
+        }
       }
 
       // ✅ Kuljettajan hyväksymä kyyti
@@ -289,7 +315,7 @@ wss.on("connection", (ws) => {
           driverImage:
             driverData.driverImage && driverData.driverImage.trim() !== ""
               ? driverData.driverImage.trim()
-              : "https://example.com/default-driver.jpg",
+              : "https://media.istockphoto.com/id/1708046305/photo/business-man-mature-and-portrait-outdoor-with-arms-crossed-for-professional-career-and.jpg?s=612x612&w=0&k=20&c=aUsA9zgugqMc6u9Pc-NfZ66G70N9m7_RjA9gdcaPxZE=",
           carImage:
             driverData.carImage && driverData.carImage.trim() !== ""
               ? driverData.carImage.trim()
