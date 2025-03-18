@@ -260,8 +260,9 @@ wss.on("connection", (ws) => {
             }
           });
         }
-      } else if (data.type === "update_location") {
+      } else if (data.type === "location_update") {
         const driver = drivers.find((d) => d.id === decoded.username);
+
         if (driver) {
           driver.location = {
             latitude: data.latitude,
@@ -272,7 +273,7 @@ wss.on("connection", (ws) => {
             driver.location
           );
 
-          // Lähetetään päivitetty sijainti asiakkaille
+          // ✅ Lähetetään asiakkaille päivitetty sijainti
           wss.clients.forEach((client) => {
             if (client.readyState === WebSocket.OPEN) {
               client.send(
@@ -285,6 +286,10 @@ wss.on("connection", (ws) => {
               );
             }
           });
+        } else {
+          console.error(
+            `❌ Kuljettajaa ${decoded.username} ei löydetty driver-listasta!`
+          );
         }
       }
 
@@ -292,11 +297,8 @@ wss.on("connection", (ws) => {
       else if (data.type === "ride_accepted") {
         console.log(`✅ Kuljettaja ${decoded.username} hyväksyi kyydin.`);
 
-        // Haetaan vain hyväksyneen kuljettajan tiedot MongoDB:stä
+        // 🔹 Haetaan kuljettajan tiedot MongoDB:stä
         const driverData = await User.findOne({ username: decoded.username });
-
-        // 🟢 Debuggaus: Tulostetaan MongoDB:stä löytynyt data
-        console.log("🟢 Kuljettajan tiedot MongoDB:stä:", driverData);
 
         if (!driverData) {
           ws.send(
@@ -308,27 +310,29 @@ wss.on("connection", (ws) => {
           return;
         }
 
-        // 🔹 Lähetetään asiakkaalle hyväksyneen kuljettajan tiedot
+        // 🔹 Korjataan kuvapolut
+        const BASE_URL = "https://taxi-server-mnlo.onrender.com"; // 🔥 Muuta tämä omaan palvelimen osoitteeseen
+
+        const driverImage = driverData.profileImage
+          ? `${BASE_URL}/${driverData.profileImage}`
+          : "https://example.com/default-driver.jpg"; // Oletuskuva
+
+        const carImage = driverData.carImage
+          ? `${BASE_URL}/${driverData.carImage}`
+          : "https://example.com/default-car.jpg"; // Oletuskuva
+
         const rideConfirmedMessage = {
           type: "ride_confirmed",
           driverName: driverData.username,
-          driverImage:
-            driverData.driverImage && driverData.driverImage.trim() !== ""
-              ? driverData.driverImage.trim()
-              : "https://media.istockphoto.com/id/1708046305/photo/business-man-mature-and-portrait-outdoor-with-arms-crossed-for-professional-career-and.jpg?s=612x612&w=0&k=20&c=aUsA9zgugqMc6u9Pc-NfZ66G70N9m7_RjA9gdcaPxZE=",
-          carImage:
-            driverData.carImage && driverData.carImage.trim() !== ""
-              ? driverData.carImage.trim()
-              : "https://example.com/default-car.jpg",
+          driverImage: driverImage, // ✅ Lähetetään oikea URL, ei vain tiedostonimeä
+          carImage: carImage, // ✅ Lähetetään oikea URL, ei vain tiedostonimeä
           carModel: driverData.carModel || "Tuntematon auto",
           licensePlate: driverData.licensePlate || "???-???",
         };
 
         console.log("📡 Lähetetään asiakkaalle:", rideConfirmedMessage);
 
-        // Lähetetään vain asiakkaalle, joka pyysi kyytiä
         ws.send(JSON.stringify(rideConfirmedMessage));
-
         wss.clients.forEach((client) => {
           if (client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify(rideConfirmedMessage));
