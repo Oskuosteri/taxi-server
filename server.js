@@ -310,26 +310,26 @@ wss.on("connection", (ws) => {
           return;
         }
 
-        // 🔹 Tarkistetaan, onko kuva jo täydellinen URL vai pitääkö siihen lisätä palvelimen osoite
         const isExternalUrl = (url) =>
-          url.startsWith("http://") || url.startsWith("https://");
+          url && (url.startsWith("http://") || url.startsWith("https://"));
 
-        const driverImage =
-          driverData.profileImage && isExternalUrl(driverData.profileImage)
-            ? driverData.profileImage // ✅ Käytä suoraan, jos se on täysi URL
-            : `https://taxi-server-mnlo.onrender.com/${driverData.profileImage}`;
+        const driverImage = driverData.driverImage // 🔥 Muutettu oikeaan kenttään
+          ? isExternalUrl(driverData.driverImage)
+            ? driverData.driverImage
+            : `https://taxi-server-mnlo.onrender.com/${driverData.driverImage}`
+          : "https://example.com/default-driver.jpg"; // ✅ Oletuskuva, jos puuttuu
 
-        const carImage =
-          driverData.carImage && isExternalUrl(driverData.carImage)
-            ? driverData.carImage // ✅ Käytä suoraan, jos se on täysi URL
-            : `https://taxi-server-mnlo.onrender.com/${driverData.carImage}`;
+        const carImage = driverData.carImage
+          ? isExternalUrl(driverData.carImage)
+            ? driverData.carImage
+            : `https://taxi-server-mnlo.onrender.com/${driverData.carImage}`
+          : "https://example.com/default-car.jpg";
 
-        // 🔹 Lähetetään asiakkaalle hyväksyneen kuljettajan tiedot
         const rideConfirmedMessage = {
           type: "ride_confirmed",
           driverName: driverData.username,
-          driverImage: driverImage, // ✅ Lähetetään oikea URL
-          carImage: carImage, // ✅ Lähetetään oikea URL
+          driverImage: driverImage, // ✅ Nyt käyttää oikeaa kenttää
+          carImage: carImage,
           carModel: driverData.carModel || "Tuntematon auto",
           licensePlate: driverData.licensePlate || "???-???",
         };
