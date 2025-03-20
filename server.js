@@ -25,6 +25,17 @@ if (!MONGO_URI) {
   process.exit(1);
 }
 
+const DriverSchema = new mongoose.Schema({
+  id: String,
+  name: String,
+  latitude: Number,
+  longitude: Number,
+  carType: String, // 🔥 Auton tyyppi ("Pirssi Plus", "Pirssi Premium", "Pirssi Van")
+  isOnline: Boolean, // 🔥 Onko kuljettaja saatavilla
+});
+
+const Driver = mongoose.model("Driver", DriverSchema);
+
 const PORT = process.env.PORT || 3000;
 
 // ✅ Yhdistetään MongoDB:hen
@@ -96,39 +107,44 @@ app.get("/available-drivers", async (req, res) => {
       return res.status(400).json({ error: "Sijaintitiedot puuttuvat" });
     }
 
-    // Haetaan kaikki aktiiviset kuljettajat tietokannasta
+    const LAT = parseFloat(latitude);
+    const LON = parseFloat(longitude);
+
+    // Haetaan kaikki aktiiviset kuljettajat
     const drivers = await Driver.find({ isOnline: true });
 
-    // Käydään läpi ja tarkistetaan etäisyydet
     const availableDrivers = drivers
-      .map((driver) => {
-        const distance = getDistanceFromLatLonInKm(
-          latitude,
-          longitude,
-          driver.latitude,
-          driver.longitude
-        );
-
-        return {
-          id: driver.carType, // 🔥 Auton tyyppi (Pirssi Plus, Premium, Van)
-          closestDriverDistance: distance * 1000, // 🔥 Muutetaan metreiksi
-        };
-      })
+      .filter(
+        (driver) =>
+          getDistanceFromLatLonInKm(
+            LAT,
+            LON,
+            driver.latitude,
+            driver.longitude
+          ) <= 15
+      ) // 🔥 Suodatetaan yli 15 km päässä olevat pois
+      .map((driver) => ({
+        id: driver.carType, // 🔥 Auton tyyppi
+        distance:
+          getDistanceFromLatLonInKm(
+            LAT,
+            LON,
+            driver.latitude,
+            driver.longitude
+          ) * 1000, // 🔥 Metreiksi
+      }))
       .reduce((acc, driver) => {
-        // Jos tälle autotyypille ei ole vielä lisätty kuljettajaa tai tämä on lähempänä, päivitetään
-        if (!acc[driver.id] || driver.closestDriverDistance < acc[driver.id]) {
-          acc[driver.id] = driver.closestDriverDistance;
+        if (!acc[driver.id] || driver.distance < acc[driver.id]) {
+          acc[driver.id] = driver.distance;
         }
         return acc;
       }, {});
 
     res.json(
-      Object.entries(availableDrivers).map(
-        ([carType, closestDriverDistance]) => ({
-          id: carType,
-          closestDriverDistance,
-        })
-      )
+      Object.entries(availableDrivers).map(([carType, distance]) => ({
+        id: carType,
+        closestDriverDistance: distance,
+      }))
     );
   } catch (error) {
     console.error("❌ Virhe haettaessa kuljettajia:", error);
