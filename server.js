@@ -88,6 +88,68 @@ app.post("/upload", upload.single("image"), (req, res) => {
   res.json({ success: true, imagePath: req.file.path });
 });
 
+app.get("/available-drivers", async (req, res) => {
+  try {
+    const { latitude, longitude } = req.query;
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({ error: "Sijaintitiedot puuttuvat" });
+    }
+
+    // Haetaan kaikki aktiiviset kuljettajat tietokannasta
+    const drivers = await Driver.find({ isOnline: true });
+
+    // Käydään läpi ja tarkistetaan etäisyydet
+    const availableDrivers = drivers
+      .map((driver) => {
+        const distance = getDistanceFromLatLonInKm(
+          latitude,
+          longitude,
+          driver.latitude,
+          driver.longitude
+        );
+
+        return {
+          id: driver.carType, // 🔥 Auton tyyppi (Pirssi Plus, Premium, Van)
+          closestDriverDistance: distance * 1000, // 🔥 Muutetaan metreiksi
+        };
+      })
+      .reduce((acc, driver) => {
+        // Jos tälle autotyypille ei ole vielä lisätty kuljettajaa tai tämä on lähempänä, päivitetään
+        if (!acc[driver.id] || driver.closestDriverDistance < acc[driver.id]) {
+          acc[driver.id] = driver.closestDriverDistance;
+        }
+        return acc;
+      }, {});
+
+    res.json(
+      Object.entries(availableDrivers).map(
+        ([carType, closestDriverDistance]) => ({
+          id: carType,
+          closestDriverDistance,
+        })
+      )
+    );
+  } catch (error) {
+    console.error("❌ Virhe haettaessa kuljettajia:", error);
+    res.status(500).json({ error: "Sisäinen palvelinvirhe" });
+  }
+});
+
+const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
+  const R = 6371; // Maapallon säde km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // Etäisyys km
+};
+
 // ✅ Kirjautuminen (POST /login)
 app.post("/login", async (req, res) => {
   try {
