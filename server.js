@@ -107,45 +107,22 @@ app.get("/available-drivers", async (req, res) => {
       return res.status(400).json({ error: "Sijaintitiedot puuttuvat" });
     }
 
-    const LAT = parseFloat(latitude);
-    const LON = parseFloat(longitude);
+    // 🔥 Haetaan aktiiviset kuljettajat WebSocket-listasta, EI MongoDB:stä
+    const activeDrivers = drivers.filter((d) => d.isWorking);
 
-    // Haetaan kaikki aktiiviset kuljettajat
-    const drivers = await Driver.find({ isOnline: true });
+    // 🔥 Lasketaan etäisyys jokaiselle kuljettajalle ja palautetaan listana
+    const availableDrivers = activeDrivers.map((driver) => ({
+      id: driver.carType, // 🔥 Auton tyyppi
+      closestDriverDistance:
+        getDistanceFromLatLonInKm(
+          latitude,
+          longitude,
+          driver.location.latitude,
+          driver.location.longitude
+        ) * 1000, // Metreiksi
+    }));
 
-    const availableDrivers = drivers
-      .filter(
-        (driver) =>
-          getDistanceFromLatLonInKm(
-            LAT,
-            LON,
-            driver.latitude,
-            driver.longitude
-          ) <= 15
-      ) // 🔥 Suodatetaan yli 15 km päässä olevat pois
-      .map((driver) => ({
-        id: driver.carType, // 🔥 Auton tyyppi
-        distance:
-          getDistanceFromLatLonInKm(
-            LAT,
-            LON,
-            driver.latitude,
-            driver.longitude
-          ) * 1000, // 🔥 Metreiksi
-      }))
-      .reduce((acc, driver) => {
-        if (!acc[driver.id] || driver.distance < acc[driver.id]) {
-          acc[driver.id] = driver.distance;
-        }
-        return acc;
-      }, {});
-
-    res.json(
-      Object.entries(availableDrivers).map(([carType, distance]) => ({
-        id: carType,
-        closestDriverDistance: distance,
-      }))
-    );
+    res.json(availableDrivers);
   } catch (error) {
     console.error("❌ Virhe haettaessa kuljettajia:", error);
     res.status(500).json({ error: "Sisäinen palvelinvirhe" });
@@ -298,10 +275,33 @@ wss.on("connection", (ws) => {
       // ✅ Kuljettajan työvuoron aloitus
       else if (data.type === "start_shift") {
         const driver = drivers.find((d) => d.id === decoded.username);
+
         if (driver) {
           driver.isWorking = true;
+          driver.carType = data.carType || "unknown"; // 🔥 Päivitetään kuljettajan auton tyyppi
+          driver.location = {
+            latitude: data.latitude,
+            longitude: data.longitude,
+          };
+
           ws.send(JSON.stringify({ type: "shift_started" }));
           console.log(`🟢 Kuljettaja ${decoded.username} aloitti työvuoron.`);
+        } else {
+          console.log(
+            `⚠️ Kuljettajaa ${decoded.username} ei löytynyt, lisätään se.`
+          );
+          drivers.push({
+            id: decoded.username,
+            ws,
+            isWorking: true,
+            carType: data.carType || "unknown",
+            location: {
+              latitude: data.latitude,
+              longitude: data.longitude,
+            },
+          });
+
+          ws.send(JSON.stringify({ type: "shift_started" }));
         }
       }
 
