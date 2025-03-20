@@ -375,11 +375,11 @@ wss.on("connection", (ws) => {
         const isExternalUrl = (url) =>
           url && (url.startsWith("http://") || url.startsWith("https://"));
 
-        const driverImage = driverData.driverImage // 🔥 Muutettu oikeaan kenttään
+        const driverImage = driverData.driverImage
           ? isExternalUrl(driverData.driverImage)
             ? driverData.driverImage
             : `https://taxi-server-mnlo.onrender.com/${driverData.driverImage}`
-          : "https://example.com/default-driver.jpg"; // ✅ Oletuskuva, jos puuttuu
+          : "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRs10cupyp3Wf-pZvdPjGQuKne14ngVZbYdDQ&s";
 
         const carImage = driverData.carImage
           ? isExternalUrl(driverData.carImage)
