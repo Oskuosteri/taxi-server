@@ -25,17 +25,6 @@ if (!MONGO_URI) {
   process.exit(1);
 }
 
-const DriverSchema = new mongoose.Schema({
-  id: String,
-  name: String,
-  latitude: Number,
-  longitude: Number,
-  carType: String, // 🔥 Auton tyyppi ("Pirssi Plus", "Pirssi Premium", "Pirssi Van")
-  isOnline: Boolean, // 🔥 Onko kuljettaja saatavilla
-});
-
-const Driver = mongoose.model("Driver", DriverSchema);
-
 const PORT = process.env.PORT || 3000;
 
 // ✅ Yhdistetään MongoDB:hen
@@ -100,6 +89,7 @@ app.post("/upload", upload.single("image"), (req, res) => {
 });
 
 app.get("/available-drivers", async (req, res) => {
+  console.log("📡 Haetaan saatavilla olevia kuljettajia...");
   try {
     const { latitude, longitude } = req.query;
 
@@ -107,22 +97,44 @@ app.get("/available-drivers", async (req, res) => {
       return res.status(400).json({ error: "Sijaintitiedot puuttuvat" });
     }
 
-    // 🔥 Haetaan aktiiviset kuljettajat WebSocket-listasta, EI MongoDB:stä
-    const activeDrivers = drivers.filter((d) => d.isWorking);
+    // 🔥 Käytetään muistissa olevia kuljettajia (ei MongoDB:tä)
+    const driverList = Object.values(drivers);
 
-    // 🔥 Lasketaan etäisyys jokaiselle kuljettajalle ja palautetaan listana
-    const availableDrivers = activeDrivers.map((driver) => ({
-      id: driver.carType, // 🔥 Auton tyyppi
-      closestDriverDistance:
-        getDistanceFromLatLonInKm(
+    console.log("🔍 Palvelimella aktiiviset kuljettajat:", driverList);
+
+    const availableDrivers = driverList
+      .map((driver) => {
+        const distance = getDistanceFromLatLonInKm(
           latitude,
           longitude,
-          driver.location.latitude,
-          driver.location.longitude
-        ) * 1000, // Metreiksi
-    }));
+          driver.latitude,
+          driver.longitude
+        );
 
-    res.json(availableDrivers);
+        console.log(`🚖 ${driver.carType} kuljettajan etäisyys:`, distance);
+
+        return {
+          id: driver.carType,
+          closestDriverDistance: distance * 1000, // Muutetaan metreiksi
+        };
+      })
+      .reduce((acc, driver) => {
+        if (!acc[driver.id] || driver.closestDriverDistance < acc[driver.id]) {
+          acc[driver.id] = driver.closestDriverDistance;
+        }
+        return acc;
+      }, {});
+
+    console.log("✅ Saatavilla olevat kuljettajat:", availableDrivers);
+
+    res.json(
+      Object.entries(availableDrivers).map(
+        ([carType, closestDriverDistance]) => ({
+          id: carType,
+          closestDriverDistance,
+        })
+      )
+    );
   } catch (error) {
     console.error("❌ Virhe haettaessa kuljettajia:", error);
     res.status(500).json({ error: "Sisäinen palvelinvirhe" });
@@ -223,7 +235,8 @@ app.post("/register", async (req, res) => {
 // ✅ WebSocket-palvelin
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
-let drivers = [];
+
+const drivers = {};
 
 wss.on("connection", (ws) => {
   console.log("✅ WebSocket-yhteys avattu");
@@ -260,28 +273,36 @@ wss.on("connection", (ws) => {
         return;
       }
 
+      const driverId = decoded.username;
+
       // ✅ Kuljettajan kirjautuminen WebSocketiin
       if (data.type === "driver_login" && decoded.role === "driver") {
-        drivers.push({
-          id: decoded.username,
+        drivers[driverId] = {
+          id: driverId,
           ws,
           isWorking: false,
+          isOnline: false,
           token: data.token,
-        });
+        };
+
         ws.send(JSON.stringify({ type: "login_success" }));
-        console.log(`🚖 Kuljettaja ${decoded.username} kirjautui sisään.`);
+        console.log(`🚖 Kuljettaja ${driverId} kirjautui sisään.`);
       }
 
       // ✅ Kuljettajan työvuoron aloitus
       else if (data.type === "start_shift") {
-        const driver = drivers.find((d) => d.id === decoded.username);
+        const driver = drivers[decoded.username];
 
         if (driver) {
-          driver.isWorking = true;
-          driver.carType = data.carType || "unknown"; // 🔥 Päivitetään kuljettajan auton tyyppi
-          driver.location = {
-            latitude: data.latitude,
-            longitude: data.longitude,
+          drivers[driverId] = {
+            ...drivers[driverId], // ✅ Säilyttää vanhat tiedot
+            isWorking: true,
+            isOnline: true, // 🔥 Nyt kuljettaja merkitään aktiiviseksi
+            carType: data.carType || "unknown",
+            location: {
+              latitude: data.latitude,
+              longitude: data.longitude,
+            },
           };
 
           ws.send(JSON.stringify({ type: "shift_started" }));
@@ -290,8 +311,8 @@ wss.on("connection", (ws) => {
           console.log(
             `⚠️ Kuljettajaa ${decoded.username} ei löytynyt, lisätään se.`
           );
-          drivers.push({
-            id: decoded.username,
+          drivers[driverId] = {
+            id: driverId,
             ws,
             isWorking: true,
             carType: data.carType || "unknown",
@@ -299,19 +320,20 @@ wss.on("connection", (ws) => {
               latitude: data.latitude,
               longitude: data.longitude,
             },
-          });
+          };
 
           ws.send(JSON.stringify({ type: "shift_started" }));
+          console.log(`🟢 Kuljettaja ${driverId} aloitti työvuoron.`);
         }
       }
 
       // ✅ Kuljettajan työvuoron lopetus
       else if (data.type === "stop_shift") {
-        const driver = drivers.find((d) => d.id === decoded.username);
-        if (driver) {
-          driver.isWorking = false;
+        if (drivers[driverId]) {
+          drivers[driverId].isWorking = false;
+          drivers[driverId].isOnline = false;
           ws.send(JSON.stringify({ type: "shift_stopped" }));
-          console.log(`🔴 Kuljettaja ${decoded.username} lopetti työvuoron.`);
+          console.log(`🔴 Kuljettaja ${driverId} lopetti työvuoron.`);
         }
       }
 
@@ -319,7 +341,9 @@ wss.on("connection", (ws) => {
       else if (data.type === "ride_request") {
         console.log("🚖 Uusi kyytipyyntö vastaanotettu palvelimella:", data);
 
-        const availableDrivers = drivers.filter((d) => d.isWorking);
+        const availableDrivers = Object.values(drivers).filter(
+          (d) => d.isWorking
+        );
         console.log(
           `📢 Lähetetään kyytipyyntö ${availableDrivers.length} kuljettajalle`
         );
@@ -339,17 +363,12 @@ wss.on("connection", (ws) => {
           });
         }
       } else if (data.type === "location_update") {
-        const driver = drivers.find((d) => d.id === decoded.username);
-
-        if (driver) {
-          driver.location = {
+        if (drivers[driverId]) {
+          drivers[driverId].location = {
             latitude: data.latitude,
             longitude: data.longitude,
           };
-          console.log(
-            `📍 Kuljettajan ${decoded.username} sijainti päivitetty:`,
-            driver.location
-          );
+          console.log(`📍 Kuljettajan ${driverId} sijainti päivitetty.`);
 
           // ✅ Lähetetään asiakkaille päivitetty sijainti
           wss.clients.forEach((client) => {
@@ -466,7 +485,12 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
-    drivers = drivers.filter((driver) => driver.ws !== ws);
+    Object.keys(drivers).forEach((driverId) => {
+      if (drivers[driverId].ws === ws) {
+        console.log(`🔴 Kuljettaja ${driverId} poistettiin listalta.`);
+        delete drivers[driverId]; // ✅ Poistaa kuljettajan listasta
+      }
+    });
   });
 });
 
