@@ -12,7 +12,7 @@ const path = require("path");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 //  git add .
-//  git commit -m "Päivitetty server.js ja muita muutoksia"
+//  git commit -m "Parannuksia"
 //  git push origin main
 
 const app = express();
