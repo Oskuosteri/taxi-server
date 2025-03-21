@@ -11,6 +11,10 @@ const multer = require("multer");
 const path = require("path");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
+//  git add .
+//  git commit -m "Päivitetty server.js ja muita muutoksia"
+//  git push origin main
+
 const app = express();
 app.use(express.json());
 app.use(cors());
@@ -287,13 +291,10 @@ wss.on("connection", (ws) => {
 
         ws.send(JSON.stringify({ type: "login_success" }));
         console.log(`🚖 Kuljettaja ${driverId} kirjautui sisään.`);
-      }
+      } else if (data.type === "start_shift") {
+        const driverId = decoded.username;
 
-      // ✅ Kuljettajan työvuoron aloitus
-      else if (data.type === "start_shift") {
-        const driver = drivers[decoded.username];
-
-        if (driver) {
+        if (drivers[driverId]) {
           drivers[driverId] = {
             ...drivers[driverId], // ✅ Säilyttää vanhat tiedot
             isWorking: true,
@@ -305,16 +306,18 @@ wss.on("connection", (ws) => {
             },
           };
 
-          ws.send(JSON.stringify({ type: "shift_started" }));
-          console.log(`🟢 Kuljettaja ${decoded.username} aloitti työvuoron.`);
-        } else {
           console.log(
-            `⚠️ Kuljettajaa ${decoded.username} ei löytynyt, lisätään se.`
+            `🟢 Kuljettaja ${driverId} aloitti työvuoron. Tyyppi: ${drivers[driverId].carType}`
           );
+          ws.send(JSON.stringify({ type: "shift_started" }));
+        } else {
+          console.log(`⚠️ Kuljettajaa ${driverId} ei löytynyt, lisätään se.`);
+
           drivers[driverId] = {
             id: driverId,
             ws,
             isWorking: true,
+            isOnline: true,
             carType: data.carType || "unknown",
             location: {
               latitude: data.latitude,
@@ -322,8 +325,10 @@ wss.on("connection", (ws) => {
             },
           };
 
+          console.log(
+            `✅ Lisätty uusi kuljettaja: ${drivers[driverId].carType}`
+          );
           ws.send(JSON.stringify({ type: "shift_started" }));
-          console.log(`🟢 Kuljettaja ${driverId} aloitti työvuoron.`);
         }
       }
 
