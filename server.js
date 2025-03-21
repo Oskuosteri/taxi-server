@@ -303,8 +303,8 @@ wss.on("connection", (ws) => {
         console.log(`🚖 Kuljettaja ${driverId} aloittaa työvuoron...`);
 
         try {
-          // 🔥 Hae kuljettajan tiedot MongoDB:stä
-          const driverData = await User.findOne({ username: driverId });
+          // 🔥 Haetaan kuljettajan tiedot MongoDB:stä
+          const driverData = await User.findOne({ username: driverId }).lean();
 
           if (!driverData) {
             console.log(`❌ Kuljettajaa ${driverId} ei löydy tietokannasta!`);
@@ -314,7 +314,9 @@ wss.on("connection", (ws) => {
             return;
           }
 
-          // 🔥 Tarkistetaan, että `carType` löytyy MongoDB:stä
+          console.log(`🛠 Kuljettajan tietokanta-arvot:`, driverData);
+
+          // 🔥 Varmistetaan, että `carType` löytyy MongoDB:stä
           const carType = driverData.carType ?? "unknown";
           console.log(`🚖 Kuljettajan auto: ${carType}`);
 
@@ -396,6 +398,12 @@ wss.on("connection", (ws) => {
           // ✅ Tarkistetaan, että sijainti ei ole undefined
           if (!data.latitude || !data.longitude) {
             console.error(`❌ Kuljettajan ${driverId} sijainti ei päivity!`);
+            ws.send(
+              JSON.stringify({
+                type: "error",
+                message: "Virheellinen sijainti",
+              })
+            );
             return;
           }
 
