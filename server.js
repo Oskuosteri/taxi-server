@@ -292,6 +292,7 @@ wss.on("connection", (ws) => {
         ws.send(JSON.stringify({ type: "login_success" }));
         console.log(`🚖 Kuljettaja ${driverId} kirjautui sisään.`);
       } // ✅ Kuljettajan työvuoron aloitus
+      // ✅ Kuljettajan työvuoron aloitus
       else if (data.type === "start_shift") {
         const driverId = decoded.username;
 
@@ -312,36 +313,33 @@ wss.on("connection", (ws) => {
           const carType = driverData.carType || "unknown"; // 🔥 Haetaan auton tyyppi MongoDB:stä
           console.log(`🚖 Kuljettajan auto: ${carType}`);
 
-          if (drivers[driverId]) {
-            drivers[driverId] = {
-              ...drivers[driverId], // ✅ Säilyttää vanhat tiedot
-              isWorking: true,
-              isOnline: true,
-              carType: carType, // 🔥 Nyt päivitetään oikea auton tyyppi
-              location: {
-                latitude: data.latitude,
-                longitude: data.longitude,
-              },
-            };
-          } else {
-            console.log(
-              `⚠️ Kuljettajaa ${driverId} ei löytynyt WebSocket-listasta, lisätään se.`
+          // ✅ Varmistetaan, että sijainti ei ole undefined
+          const latitude = data.latitude ?? driverData.latitude ?? 0;
+          const longitude = data.longitude ?? driverData.longitude ?? 0;
+
+          if (!latitude || !longitude) {
+            console.log(`⚠️ Kuljettajan ${driverId} koordinaatit puuttuvat!`);
+            ws.send(
+              JSON.stringify({ type: "error", message: "Sijainti puuttuu" })
             );
-            drivers[driverId] = {
-              id: driverId,
-              ws,
-              isWorking: true,
-              isOnline: true,
-              carType: carType, // 🔥 Nyt päivitetään oikea auton tyyppi
-              location: {
-                latitude: data.latitude,
-                longitude: data.longitude,
-              },
-            };
+            return;
           }
 
+          // ✅ Päivitetään WebSocket-kuljettajalistaan
+          drivers[driverId] = {
+            id: driverId,
+            ws,
+            isWorking: true,
+            isOnline: true,
+            carType: carType, // 🔥 Nyt päivitetään oikea auton tyyppi
+            location: {
+              latitude: latitude,
+              longitude: longitude,
+            },
+          };
+
           console.log(
-            `✅ Kuljettaja ${driverId} on nyt aktiivinen. Auto: ${carType}, Sijainti: ${drivers[driverId].location.latitude}, ${drivers[driverId].location.longitude}`
+            `✅ Kuljettaja ${driverId} on nyt aktiivinen. Auto: ${carType}, Sijainti: ${latitude}, ${longitude}`
           );
           ws.send(JSON.stringify({ type: "shift_started" }));
         } catch (error) {
@@ -385,13 +383,18 @@ wss.on("connection", (ws) => {
             }
           });
         }
-      } else if (data.type === "location_update") {
+      } // ✅ Kuljettajan sijainnin päivitys
+      else if (data.type === "location_update") {
+        const driverId = decoded.username;
+
         if (drivers[driverId]) {
           drivers[driverId].location = {
             latitude: data.latitude,
             longitude: data.longitude,
           };
-          console.log(`📍 Kuljettajan ${driverId} sijainti päivitetty.`);
+          console.log(
+            `📍 Kuljettajan ${driverId} sijainti päivitetty: ${data.latitude}, ${data.longitude}`
+          );
 
           // ✅ Lähetetään asiakkaille päivitetty sijainti
           wss.clients.forEach((client) => {
@@ -399,7 +402,7 @@ wss.on("connection", (ws) => {
               client.send(
                 JSON.stringify({
                   type: "driver_location_update",
-                  driverId: decoded.username,
+                  driverId: driverId,
                   latitude: data.latitude,
                   longitude: data.longitude,
                 })
@@ -408,7 +411,7 @@ wss.on("connection", (ws) => {
           });
         } else {
           console.error(
-            `❌ Kuljettajaa ${decoded.username} ei löydetty driver-listasta!`
+            `❌ Kuljettajaa ${driverId} ei löydetty WebSocket-listasta!`
           );
         }
       }
