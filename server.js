@@ -291,44 +291,62 @@ wss.on("connection", (ws) => {
 
         ws.send(JSON.stringify({ type: "login_success" }));
         console.log(`🚖 Kuljettaja ${driverId} kirjautui sisään.`);
-      } else if (data.type === "start_shift") {
+      } // ✅ Kuljettajan työvuoron aloitus
+      else if (data.type === "start_shift") {
         const driverId = decoded.username;
 
-        if (drivers[driverId]) {
-          drivers[driverId] = {
-            ...drivers[driverId], // ✅ Säilyttää vanhat tiedot
-            isWorking: true,
-            isOnline: true, // 🔥 Nyt kuljettaja merkitään aktiiviseksi
-            carType: data.carType || "unknown",
-            location: {
-              latitude: data.latitude,
-              longitude: data.longitude,
-            },
-          };
+        console.log(`🚖 Kuljettaja ${driverId} aloittaa työvuoron...`);
+
+        try {
+          // 🔥 HAE KULJETTAJAN TIEDOT TIETOKANNASTA
+          const driverData = await User.findOne({ username: driverId });
+
+          if (!driverData) {
+            console.log(`❌ Kuljettajaa ${driverId} ei löydy tietokannasta!`);
+            ws.send(
+              JSON.stringify({ type: "error", message: "Kuljettajaa ei löydy" })
+            );
+            return;
+          }
+
+          const carType = driverData.carType || "unknown"; // 🔥 Haetaan auton tyyppi MongoDB:stä
+          console.log(`🚖 Kuljettajan auto: ${carType}`);
+
+          if (drivers[driverId]) {
+            drivers[driverId] = {
+              ...drivers[driverId], // ✅ Säilyttää vanhat tiedot
+              isWorking: true,
+              isOnline: true,
+              carType: carType, // 🔥 Nyt päivitetään oikea auton tyyppi
+              location: {
+                latitude: data.latitude,
+                longitude: data.longitude,
+              },
+            };
+          } else {
+            console.log(
+              `⚠️ Kuljettajaa ${driverId} ei löytynyt WebSocket-listasta, lisätään se.`
+            );
+            drivers[driverId] = {
+              id: driverId,
+              ws,
+              isWorking: true,
+              isOnline: true,
+              carType: carType, // 🔥 Nyt päivitetään oikea auton tyyppi
+              location: {
+                latitude: data.latitude,
+                longitude: data.longitude,
+              },
+            };
+          }
 
           console.log(
-            `🟢 Kuljettaja ${driverId} aloitti työvuoron. Tyyppi: ${drivers[driverId].carType}`
+            `✅ Kuljettaja ${driverId} on nyt aktiivinen. Auto: ${carType}, Sijainti: ${drivers[driverId].location.latitude}, ${drivers[driverId].location.longitude}`
           );
           ws.send(JSON.stringify({ type: "shift_started" }));
-        } else {
-          console.log(`⚠️ Kuljettajaa ${driverId} ei löytynyt, lisätään se.`);
-
-          drivers[driverId] = {
-            id: driverId,
-            ws,
-            isWorking: true,
-            isOnline: true,
-            carType: data.carType || "unknown",
-            location: {
-              latitude: data.latitude,
-              longitude: data.longitude,
-            },
-          };
-
-          console.log(
-            `✅ Lisätty uusi kuljettaja: ${drivers[driverId].carType}`
-          );
-          ws.send(JSON.stringify({ type: "shift_started" }));
+        } catch (error) {
+          console.error("❌ Virhe haettaessa kuljettajan tietoja:", error);
+          ws.send(JSON.stringify({ type: "error", message: "Palvelinvirhe" }));
         }
       }
 
