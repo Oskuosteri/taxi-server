@@ -295,11 +295,10 @@ wss.on("connection", (ws) => {
       // ✅ Kuljettajan työvuoron aloitus
       else if (data.type === "start_shift") {
         const driverId = decoded.username;
-
         console.log(`🚖 Kuljettaja ${driverId} aloittaa työvuoron...`);
 
         try {
-          // 🔥 HAE KULJETTAJAN TIEDOT TIETOKANNASTA
+          // 🔥 Hae kuljettajan tiedot MongoDB:stä
           const driverData = await User.findOne({ username: driverId });
 
           if (!driverData) {
@@ -310,12 +309,13 @@ wss.on("connection", (ws) => {
             return;
           }
 
-          const carType = driverData.carType || "unknown"; // 🔥 Haetaan auton tyyppi MongoDB:stä
+          // 🔥 Tarkistetaan, että `carType` on olemassa
+          const carType = driverData.carType || "unknown";
           console.log(`🚖 Kuljettajan auto: ${carType}`);
 
           // ✅ Varmistetaan, että sijainti ei ole undefined
-          const latitude = data.latitude ?? driverData.latitude ?? 0;
-          const longitude = data.longitude ?? driverData.longitude ?? 0;
+          const latitude = data.latitude ?? 0;
+          const longitude = data.longitude ?? 0;
 
           if (!latitude || !longitude) {
             console.log(`⚠️ Kuljettajan ${driverId} koordinaatit puuttuvat!`);
@@ -325,22 +325,24 @@ wss.on("connection", (ws) => {
             return;
           }
 
-          // ✅ Päivitetään WebSocket-kuljettajalistaan
+          // ✅ Päivitetään kuljettaja WebSocket-listaan
           drivers[driverId] = {
             id: driverId,
             ws,
             isWorking: true,
             isOnline: true,
-            carType: carType, // 🔥 Nyt päivitetään oikea auton tyyppi
+            carType: carType, // 🔥 Nyt varmistetaan, että auton tyyppi lisätään
             location: {
               latitude: latitude,
               longitude: longitude,
             },
           };
 
+          console.log(`✅ Kuljettaja ${driverId} on nyt aktiivinen.`);
           console.log(
-            `✅ Kuljettaja ${driverId} on nyt aktiivinen. Auto: ${carType}, Sijainti: ${latitude}, ${longitude}`
+            `🚖 Auto: ${carType}, 📍 Sijainti: ${latitude}, ${longitude}`
           );
+
           ws.send(JSON.stringify({ type: "shift_started" }));
         } catch (error) {
           console.error("❌ Virhe haettaessa kuljettajan tietoja:", error);
@@ -384,16 +386,29 @@ wss.on("connection", (ws) => {
           });
         }
       } // ✅ Kuljettajan sijainnin päivitys
+      // ✅ Kuljettajan sijainnin päivitys
       else if (data.type === "location_update") {
         const driverId = decoded.username;
 
         if (drivers[driverId]) {
+          // ✅ Varmistetaan, että saadaan oikeat sijainnit
+          const latitude =
+            data.latitude ?? drivers[driverId].location.latitude ?? 0;
+          const longitude =
+            data.longitude ?? drivers[driverId].location.longitude ?? 0;
+
+          if (!latitude || !longitude) {
+            console.error(`❌ Kuljettajan ${driverId} sijainti ei päivity!`);
+            return;
+          }
+
           drivers[driverId].location = {
-            latitude: data.latitude,
-            longitude: data.longitude,
+            latitude: latitude,
+            longitude: longitude,
           };
+
           console.log(
-            `📍 Kuljettajan ${driverId} sijainti päivitetty: ${data.latitude}, ${data.longitude}`
+            `📍 Kuljettajan ${driverId} sijainti päivitetty: ${latitude}, ${longitude}`
           );
 
           // ✅ Lähetetään asiakkaille päivitetty sijainti
@@ -403,8 +418,8 @@ wss.on("connection", (ws) => {
                 JSON.stringify({
                   type: "driver_location_update",
                   driverId: driverId,
-                  latitude: data.latitude,
-                  longitude: data.longitude,
+                  latitude: latitude,
+                  longitude: longitude,
                 })
               );
             }
