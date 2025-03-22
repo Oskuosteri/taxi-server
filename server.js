@@ -108,11 +108,25 @@ app.get("/available-drivers", async (req, res) => {
 
     const availableDrivers = driverList
       .map((driver) => {
+        if (
+          !driver.location ||
+          typeof driver.location.latitude !== "number" ||
+          typeof driver.location.longitude !== "number"
+        ) {
+          console.warn(
+            "⚠️ Etäisyyslaskenta epäonnistui, koordinaatit puuttuvat!"
+          );
+          return {
+            id: driver.carType || "undefined",
+            closestDriverDistance: 999999 * 1000, // Palautetaan suuri etäisyys
+          };
+        }
+
         const distance = getDistanceFromLatLonInKm(
           latitude,
           longitude,
-          driver.latitude,
-          driver.longitude
+          driver.location.latitude,
+          driver.location.longitude
         );
 
         console.log(`🚖 ${driver.carType} kuljettajan etäisyys:`, distance);
