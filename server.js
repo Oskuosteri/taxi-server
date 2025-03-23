@@ -375,8 +375,16 @@ wss.on("connection", (ws) => {
         if (drivers[driverId]) {
           drivers[driverId].isWorking = false;
           drivers[driverId].isOnline = false;
+
+          // 🔴 Poista aktiivisista kuljettajista
+          activeDrivers.delete(driverId);
+
+          // ✅ Lähetä kuljettajalle vahvistus
           ws.send(JSON.stringify({ type: "shift_stopped" }));
           console.log(`🔴 Kuljettaja ${driverId} lopetti työvuoron.`);
+
+          // 🔄 Ilmoita asiakkaille, että kuljettajan tila muuttui
+          broadcastToClients({ type: "driver_status_changed" });
         }
       } else if (data.type === "ride_request") {
         console.log("🚖 Uusi kyytipyyntö vastaanotettu palvelimella:", data);
