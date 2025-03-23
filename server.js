@@ -65,8 +65,9 @@ const userSchema = new mongoose.Schema({
   name: String,
   carModel: String,
   licensePlate: String,
-  profileImage: String, // Kuvan polku
-  carImage: String, // Kuvan polku
+  profileImage: String,
+  carImage: String,
+  carType: { type: String },
 });
 
 const User = mongoose.model("User", userSchema);
