@@ -9,6 +9,7 @@ const cors = require("cors");
 const bodyParser = require("body-parser");
 const multer = require("multer");
 const path = require("path");
+const activeRideRequests = new Set();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 //  git add .
@@ -376,36 +377,28 @@ wss.on("connection", (ws) => {
           ws.send(JSON.stringify({ type: "shift_stopped" }));
           console.log(`🔴 Kuljettaja ${driverId} lopetti työvuoron.`);
         }
-      }
-
-      // ✅ Asiakkaan kyytipyynnön käsittely
-      else if (data.type === "ride_request") {
+      } else if (data.type === "ride_request") {
         console.log("🚖 Uusi kyytipyyntö vastaanotettu palvelimella:", data);
+
+        if (activeRideRequests.has(data.rideId)) {
+          console.log(
+            "⚠️ Sama kyytipyyntö on jo lähetetty, ei lähetetä uudelleen."
+          );
+          return;
+        }
+
+        activeRideRequests.add(data.rideId);
 
         const availableDrivers = Object.values(drivers).filter(
           (d) => d.isWorking
         );
-        console.log(
-          `📢 Lähetetään kyytipyyntö ${availableDrivers.length} kuljettajalle`
-        );
 
-        if (availableDrivers.length === 0) {
-          ws.send(
-            JSON.stringify({
-              type: "error",
-              message: "Ei vapaita kuljettajia saatavilla",
-            })
-          );
-        } else {
-          availableDrivers.forEach((driver) => {
-            if (driver.ws.readyState === WebSocket.OPEN) {
-              driver.ws.send(JSON.stringify(data));
-            }
-          });
-        }
-      } // ✅ Kuljettajan sijainnin päivitys
-      // ✅ Kuljettajan sijainnin päivitys
-      else if (data.type === "location_update") {
+        availableDrivers.forEach((driver) => {
+          if (driver.ws.readyState === WebSocket.OPEN) {
+            driver.ws.send(JSON.stringify(data));
+          }
+        });
+      } else if (data.type === "location_update") {
         const driverId = decoded.username;
 
         if (drivers[driverId]) {
@@ -453,6 +446,8 @@ wss.on("connection", (ws) => {
       // ✅ Kuljettajan hyväksymä kyyti
       else if (data.type === "ride_accepted") {
         console.log(`✅ Kuljettaja ${decoded.username} hyväksyi kyydin.`);
+
+        activeRideRequests.delete(data.rideId);
 
         // 🔹 Haetaan kuljettajan tiedot MongoDB:stä
         const driverData = await User.findOne({ username: decoded.username });
