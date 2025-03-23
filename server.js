@@ -161,6 +161,14 @@ app.get("/available-drivers", async (req, res) => {
   }
 });
 
+function broadcastToClients(message) {
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN && client.userRole === "client") {
+      client.send(JSON.stringify(message));
+    }
+  });
+}
+
 const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
   if (!lat1 || !lon1 || !lat2 || !lon2) {
     console.log("⚠️ Etäisyyslaskenta epäonnistui, koordinaatit puuttuvat!");
@@ -376,15 +384,16 @@ wss.on("connection", (ws) => {
           drivers[driverId].isWorking = false;
           drivers[driverId].isOnline = false;
 
-          // 🔴 Poista aktiivisista kuljettajista
-          activeDrivers.delete(driverId);
-
-          // ✅ Lähetä kuljettajalle vahvistus
+          // 🔴 Lähetä kuljettajalle kuittaus
           ws.send(JSON.stringify({ type: "shift_stopped" }));
+
           console.log(`🔴 Kuljettaja ${driverId} lopetti työvuoron.`);
 
-          // 🔄 Ilmoita asiakkaille, että kuljettajan tila muuttui
-          broadcastToClients({ type: "driver_status_changed" });
+          // 🔁 Lähetetään asiakkaille päivitys että joku kuljettaja meni offline-tilaan
+          broadcastToClients({
+            type: "driver_offline",
+            id: driverId,
+          });
         }
       } else if (data.type === "ride_request") {
         console.log("🚖 Uusi kyytipyyntö vastaanotettu palvelimella:", data);
