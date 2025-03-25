@@ -458,6 +458,28 @@ wss.on("connection", (ws) => {
                 );
               }
             });
+          } else if (data.type === "ride_completed") {
+            const driverId = decoded.username;
+            const { rideId } = data;
+
+            console.log(`✅ Kuljettaja ${driverId} suoritti kyydin: ${rideId}`);
+
+            // Lähetetään tieto asiakkaalle kyydin päättymisestä
+            wss.clients.forEach((client) => {
+              if (
+                client.readyState === WebSocket.OPEN &&
+                client.userRole === "client"
+              ) {
+                client.send(
+                  JSON.stringify({
+                    type: "ride_completed",
+                    rideId: rideId,
+                    driverId: driverId,
+                    date: new Date().toISOString(),
+                  })
+                );
+              }
+            });
           } else {
             console.error(
               `❌ Kuljettajaa ${driverId} ei löydetty WebSocket-listasta!`
@@ -515,6 +537,28 @@ wss.on("connection", (ws) => {
         wss.clients.forEach((client) => {
           if (client.readyState === WebSocket.OPEN) {
             client.send(JSON.stringify(rideConfirmedMessage));
+          }
+        });
+      } else if (data.type === "ride_completed") {
+        const driverId = decoded.username;
+        const { rideId } = data;
+
+        console.log(`✅ Kuljettaja ${driverId} suoritti kyydin: ${rideId}`);
+
+        // Lähetetään tieto asiakkaalle kyydin päättymisestä
+        wss.clients.forEach((client) => {
+          if (
+            client.readyState === WebSocket.OPEN &&
+            client.userRole === "client"
+          ) {
+            client.send(
+              JSON.stringify({
+                type: "ride_completed",
+                rideId: rideId,
+                driverId: driverId,
+                date: new Date().toISOString(),
+              })
+            );
           }
         });
       } else {
