@@ -275,35 +275,177 @@ const driverLastUpdate = {};
 const clients = {};
 
 wss.on("connection", (ws) => {
+  console.log("✅ WebSocket-yhteys avattu");
+
   ws.on("message", async (message) => {
-    const data = JSON.parse(message);
+    try {
+      const data = JSON.parse(message);
+      const decoded = jwt.verify(data.token, JWT_SECRET);
+      const driverId = decoded.username;
 
-    if (data.type === "authenticate") {
-      ws.userRole = data.role;
-      ws.username = data.username;
-      clients[data.username] = ws;
-      console.log(`✅ Asiakas yhdistetty: ${data.username}`);
-    } else if (data.type === "ride_completed") {
-      const { rideId, customerUsername } = data;
-      const customerSocket = clients[customerUsername];
+      if (data.type === "authenticate") {
+        ws.userRole = data.role;
+        ws.username = data.username;
+        clients[data.username] = ws;
+        console.log(`✅ Asiakas yhdistetty: ${data.username}`);
+      } else if (data.type === "ride_completed") {
+        const { rideId, customerUsername } = data;
+        const customerSocket = clients[customerUsername];
 
-      if (customerSocket && customerSocket.readyState === WebSocket.OPEN) {
-        customerSocket.send(
-          JSON.stringify({
-            type: "ride_completed",
-            rideId,
-            driverId: ws.username,
-            date: new Date().toISOString(),
-          })
-        );
-        console.log(
-          `✅ ride_completed lähetetty asiakkaalle: ${customerUsername}`
-        );
+        if (customerSocket && customerSocket.readyState === WebSocket.OPEN) {
+          customerSocket.send(
+            JSON.stringify({
+              type: "ride_completed",
+              rideId,
+              driverId,
+              date: new Date().toISOString(),
+            })
+          );
+          console.log(
+            `✅ ride_completed lähetetty asiakkaalle: ${customerUsername}`
+          );
+        } else {
+          console.error(
+            `❌ Asiakasta ${customerUsername} ei löydetty tai yhteys suljettu.`
+          );
+        }
+      } else if (data.type === "driver_login" && decoded.role === "driver") {
+        drivers[driverId] = {
+          id: driverId,
+          ws,
+          isWorking: false,
+          isOnline: false,
+          token: data.token,
+        };
+        ws.send(JSON.stringify({ type: "login_success" }));
+        console.log(`🚖 Kuljettaja ${driverId} kirjautui sisään.`);
+      } else if (data.type === "start_shift") {
+        const driverData = await User.findOne({ username: driverId }).lean();
+        if (!driverData) {
+          ws.send(
+            JSON.stringify({ type: "error", message: "Kuljettajaa ei löydy" })
+          );
+          return;
+        }
+
+        drivers[driverId] = {
+          id: driverId,
+          ws,
+          isWorking: true,
+          isOnline: true,
+          carType: driverData.carType || "unknown",
+          location: { latitude: data.latitude, longitude: data.longitude },
+        };
+        ws.send(JSON.stringify({ type: "shift_started" }));
+      } else if (data.type === "stop_shift") {
+        if (drivers[driverId]) {
+          drivers[driverId].isWorking = false;
+          drivers[driverId].isOnline = false;
+          ws.send(JSON.stringify({ type: "shift_stopped" }));
+          broadcastToClients({ type: "driver_offline", id: driverId });
+        }
+      } else if (data.type === "ride_request") {
+        if (!activeRideRequests.has(data.rideId)) {
+          activeRideRequests.add(data.rideId);
+          Object.values(drivers)
+            .filter((d) => d.isWorking && d.ws.readyState === WebSocket.OPEN)
+            .forEach((driver) => driver.ws.send(JSON.stringify(data)));
+        }
+      } else if (data.type === "location_update") {
+        const now = Date.now();
+        if (
+          !driverLastUpdate[driverId] ||
+          now - driverLastUpdate[driverId] > 5000
+        ) {
+          driverLastUpdate[driverId] = now;
+          if (drivers[driverId]) {
+            drivers[driverId].location = {
+              latitude: data.latitude,
+              longitude: data.longitude,
+            };
+            wss.clients.forEach((client) => {
+              if (client.readyState === WebSocket.OPEN) {
+                client.send(
+                  JSON.stringify({
+                    type: "driver_location_update",
+                    driverId,
+                    latitude: data.latitude,
+                    longitude: data.longitude,
+                  })
+                );
+              }
+            });
+          }
+        }
+      } else if (data.type === "ride_accepted") {
+        activeRideRequests.delete(data.rideId);
+        const driverData = await User.findOne({ username: decoded.username });
+        if (!driverData) {
+          ws.send(
+            JSON.stringify({
+              type: "error",
+              message: "Kuljettajan tietoja ei löytynyt",
+            })
+          );
+          return;
+        }
+
+        const rideConfirmedMessage = {
+          type: "ride_confirmed",
+          driverName: driverData.username,
+          driverImage: driverData.profileImage || "default-driver.jpg",
+          carImage: driverData.carImage || "default-car.jpg",
+          carModel: driverData.carModel || "Tuntematon auto",
+          licensePlate: driverData.licensePlate || "???-???",
+        };
+
+        wss.clients.forEach((client) => {
+          if (
+            client.readyState === WebSocket.OPEN &&
+            client.userRole === "client"
+          ) {
+            client.send(JSON.stringify(rideConfirmedMessage));
+          }
+        });
       } else {
-        console.error(
-          `❌ Asiakasta ${customerUsername} ei löydetty tai yhteys suljettu.`
+        ws.send(
+          JSON.stringify({ type: "error", message: "Tuntematon viesti" })
         );
       }
+    } catch (error) {
+      console.error("❌ WebSocket-virhe:", error);
+      ws.send(
+        JSON.stringify({ type: "error", message: "Virheellinen viesti" })
+      );
+    }
+  });
+
+  app.post("/create-checkout-session", async (req, res) => {
+    try {
+      const { amount } = req.body;
+      if (!amount || amount <= 0)
+        return res.status(400).json({ error: "Virheellinen summa" });
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        mode: "payment",
+        line_items: [
+          {
+            price_data: {
+              currency: "eur",
+              product_data: { name: "Taksi kyyti" },
+              unit_amount: Math.round(amount * 100),
+            },
+            quantity: 1,
+          },
+        ],
+        success_url: "mytaxiapp://success?session_id={CHECKOUT_SESSION_ID}",
+        cancel_url: "mytaxiapp://cancel",
+      });
+
+      res.json({ url: session.url });
+    } catch (error) {
+      res.status(500).json({ error: "Maksusession luonti epäonnistui" });
     }
   });
 
@@ -312,343 +454,11 @@ wss.on("connection", (ws) => {
       delete clients[ws.username];
       console.log(`❌ Käyttäjän ${ws.username} yhteys suljettu.`);
     }
-  });
-});
-
-console.log("✅ WebSocket-yhteys avattu");
-
-ws.on("message", async (message) => {
-  try {
-    const data = JSON.parse(message);
-    console.log("📩 Palvelin vastaanotti viestin:", data);
-
-    if (!data.type) {
-      ws.send(
-        JSON.stringify({ type: "error", message: "Viestityyppi puuttuu" })
-      );
-      return;
-    }
-
-    if (!data.token) {
-      ws.send(JSON.stringify({ type: "auth_error", message: "Token puuttuu" }));
-      return;
-    }
-
-    let decoded;
-    try {
-      decoded = jwt.verify(data.token, JWT_SECRET);
-    } catch (err) {
-      ws.send(
-        JSON.stringify({
-          type: "auth_error",
-          message: "Virheellinen tai vanhentunut token",
-        })
-      );
-      return;
-    }
-
-    const driverId = decoded.username;
-
-    // ✅ Kuljettajan kirjautuminen WebSocketiin
-    if (data.type === "driver_login" && decoded.role === "driver") {
-      drivers[driverId] = {
-        id: driverId,
-        ws,
-        isWorking: false,
-        isOnline: false,
-        token: data.token,
-      };
-
-      ws.send(JSON.stringify({ type: "login_success" }));
-      console.log(`🚖 Kuljettaja ${driverId} kirjautui sisään.`);
-    } // ✅ Kuljettajan työvuoron aloitus
-    // ✅ Kuljettajan työvuoron aloitus
-    else if (data.type === "start_shift") {
-      const driverId = decoded.username;
-      console.log(`🚖 Kuljettaja ${driverId} aloittaa työvuoron...`);
-
-      try {
-        // 🔥 Haetaan kuljettajan tiedot MongoDB:stä
-        const driverData = await User.findOne({ username: driverId }).lean();
-
-        if (!driverData) {
-          console.log(`❌ Kuljettajaa ${driverId} ei löydy tietokannasta!`);
-          ws.send(
-            JSON.stringify({ type: "error", message: "Kuljettajaa ei löydy" })
-          );
-          return;
-        }
-
-        console.log(`🛠 Kuljettajan tietokanta-arvot:`, driverData);
-
-        // 🔥 Varmistetaan, että `carType` löytyy MongoDB:stä
-        const carType = driverData.carType ?? "unknown";
-        console.log(`🚖 Kuljettajan auto: ${carType}`);
-
-        // ✅ Varmistetaan, että sijainti ei ole `undefined`
-        if (!data.latitude || !data.longitude) {
-          console.log(`⚠️ Kuljettajan ${driverId} koordinaatit puuttuvat!`);
-          ws.send(
-            JSON.stringify({ type: "error", message: "Sijainti puuttuu" })
-          );
-          return;
-        }
-
-        // ✅ Päivitetään kuljettaja WebSocket-listaan
-        drivers[driverId] = {
-          id: driverId,
-          ws,
-          isWorking: true,
-          isOnline: true,
-          carType: carType, // 🔥 Nyt varmistetaan, että auton tyyppi lisätään
-          location: {
-            latitude: data.latitude,
-            longitude: data.longitude,
-          },
-        };
-
-        console.log(`✅ Kuljettaja ${driverId} on nyt aktiivinen.`);
-        console.log(
-          `🚖 Auto: ${carType}, 📍 Sijainti: ${data.latitude}, ${data.longitude}`
-        );
-
-        ws.send(JSON.stringify({ type: "shift_started" }));
-      } catch (error) {
-        console.error("❌ Virhe haettaessa kuljettajan tietoja:", error);
-        ws.send(JSON.stringify({ type: "error", message: "Palvelinvirhe" }));
+    Object.keys(drivers).forEach((driverId) => {
+      if (drivers[driverId].ws === ws) {
+        delete drivers[driverId];
+        console.log(`🔴 Kuljettaja ${driverId} poistettiin listalta.`);
       }
-    }
-
-    // ✅ Kuljettajan työvuoron lopetus
-    else if (data.type === "stop_shift") {
-      if (drivers[driverId]) {
-        drivers[driverId].isWorking = false;
-        drivers[driverId].isOnline = false;
-
-        // 🔴 Lähetä kuljettajalle kuittaus
-        ws.send(JSON.stringify({ type: "shift_stopped" }));
-
-        console.log(`🔴 Kuljettaja ${driverId} lopetti työvuoron.`);
-
-        // 🔁 Lähetetään asiakkaille päivitys että joku kuljettaja meni offline-tilaan
-        broadcastToClients({
-          type: "driver_offline",
-          id: driverId,
-        });
-      }
-    } else if (data.type === "ride_request") {
-      console.log("🚖 Uusi kyytipyyntö vastaanotettu palvelimella:", data);
-
-      if (activeRideRequests.has(data.rideId)) {
-        console.log(
-          "⚠️ Sama kyytipyyntö on jo lähetetty, ei lähetetä uudelleen."
-        );
-        return;
-      }
-
-      activeRideRequests.add(data.rideId);
-
-      const availableDrivers = Object.values(drivers).filter(
-        (d) => d.isWorking
-      );
-
-      availableDrivers.forEach((driver) => {
-        if (driver.ws.readyState === WebSocket.OPEN) {
-          driver.ws.send(JSON.stringify(data));
-        }
-      });
-    } else if (data.type === "location_update") {
-      const now = Date.now();
-      if (
-        !driverLastUpdate[driverId] ||
-        now - driverLastUpdate[driverId] > 5000
-      ) {
-        driverLastUpdate[driverId] = now;
-
-        if (drivers[driverId]) {
-          if (!data.latitude || !data.longitude) {
-            console.error(`❌ Kuljettajan ${driverId} sijainti ei päivity!`);
-            ws.send(
-              JSON.stringify({
-                type: "error",
-                message: "Virheellinen sijainti",
-              })
-            );
-            return;
-          }
-
-          drivers[driverId].location = {
-            latitude: data.latitude,
-            longitude: data.longitude,
-          };
-
-          console.log(
-            `📍 Kuljettajan ${driverId} sijainti päivitetty: ${data.latitude}, ${data.longitude}`
-          );
-
-          wss.clients.forEach((client) => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(
-                JSON.stringify({
-                  type: "driver_location_update",
-                  driverId: driverId,
-                  latitude: data.latitude,
-                  longitude: data.longitude,
-                })
-              );
-            }
-          });
-        } else if (data.type === "ride_completed") {
-          const driverId = decoded.username;
-          const { rideId } = data;
-
-          console.log(`✅ Kuljettaja ${driverId} suoritti kyydin: ${rideId}`);
-
-          // Lähetetään tieto asiakkaalle kyydin päättymisestä
-          wss.clients.forEach((client) => {
-            if (
-              client.readyState === WebSocket.OPEN &&
-              client.userRole === "client"
-            ) {
-              client.send(
-                JSON.stringify({
-                  type: "ride_completed",
-                  rideId: rideId,
-                  driverId: driverId,
-                  date: new Date().toISOString(),
-                })
-              );
-            }
-          });
-        } else {
-          console.error(
-            `❌ Kuljettajaa ${driverId} ei löydetty WebSocket-listasta!`
-          );
-        }
-      }
-    }
-
-    // ✅ Kuljettajan hyväksymä kyyti
-    else if (data.type === "ride_accepted") {
-      console.log(`✅ Kuljettaja ${decoded.username} hyväksyi kyydin.`);
-
-      activeRideRequests.delete(data.rideId);
-
-      // 🔹 Haetaan kuljettajan tiedot MongoDB:stä
-      const driverData = await User.findOne({ username: decoded.username });
-
-      if (!driverData) {
-        ws.send(
-          JSON.stringify({
-            type: "error",
-            message: "Kuljettajan tietoja ei löytynyt",
-          })
-        );
-        return;
-      }
-
-      const isExternalUrl = (url) =>
-        url && (url.startsWith("http://") || url.startsWith("https://"));
-
-      const driverImage = driverData.driverImage
-        ? isExternalUrl(driverData.driverImage)
-          ? driverData.driverImage
-          : `https://taxi-server-mnlo.onrender.com/${driverData.driverImage}`
-        : "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRs10cupyp3Wf-pZvdPjGQuKne14ngVZbYdDQ&s";
-
-      const carImage = driverData.carImage
-        ? isExternalUrl(driverData.carImage)
-          ? driverData.carImage
-          : `https://taxi-server-mnlo.onrender.com/${driverData.carImage}`
-        : "https://example.com/default-car.jpg";
-
-      const rideConfirmedMessage = {
-        type: "ride_confirmed",
-        driverName: driverData.username,
-        driverImage: driverImage, // ✅ Nyt käyttää oikeaa kenttää
-        carImage: carImage,
-        carModel: driverData.carModel || "Tuntematon auto",
-        licensePlate: driverData.licensePlate || "???-???",
-      };
-
-      console.log("📡 Lähetetään asiakkaalle:", rideConfirmedMessage);
-
-      ws.send(JSON.stringify(rideConfirmedMessage));
-      wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(JSON.stringify(rideConfirmedMessage));
-        }
-      });
-    } else if (data.type === "ride_completed") {
-      const driverId = decoded.username;
-      const { rideId } = data;
-
-      console.log(`✅ Kuljettaja ${driverId} suoritti kyydin: ${rideId}`);
-
-      // Lähetetään tieto asiakkaalle kyydin päättymisestä
-      wss.clients.forEach((client) => {
-        if (
-          client.readyState === WebSocket.OPEN &&
-          client.userRole === "client"
-        ) {
-          client.send(
-            JSON.stringify({
-              type: "ride_completed",
-              rideId: rideId,
-              driverId: driverId,
-              date: new Date().toISOString(),
-            })
-          );
-        }
-      });
-    } else {
-      ws.send(JSON.stringify({ type: "error", message: "Tuntematon viesti" }));
-    }
-  } catch (error) {
-    console.error("❌ WebSocket-virhe:", error);
-    ws.send(JSON.stringify({ type: "error", message: "Virheellinen viesti" }));
-  }
-});
-
-app.post("/create-checkout-session", async (req, res) => {
-  try {
-    const { amount } = req.body;
-
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: "Virheellinen summa" });
-    }
-
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
-      mode: "payment",
-      line_items: [
-        {
-          price_data: {
-            currency: "eur",
-            product_data: { name: "Taksi kyyti" },
-            unit_amount: Math.round(amount * 100), // Stripe käyttää senttejä
-          },
-          quantity: 1,
-        },
-      ],
-      success_url: "mytaxiapp://success?session_id={CHECKOUT_SESSION_ID}",
-      cancel_url: "mytaxiapp://cancel",
     });
-
-    res.json({ url: session.url });
-  } catch (error) {
-    console.error("❌ Stripe error:", error);
-    res.status(500).json({ error: "Maksusession luonti epäonnistui" });
-  }
-});
-
-ws.on("close", () => {
-  Object.keys(drivers).forEach((driverId) => {
-    if (drivers[driverId].ws === ws) {
-      console.log(`🔴 Kuljettaja ${driverId} poistettiin listalta.`);
-      delete drivers[driverId]; // ✅ Poistaa kuljettajan listasta
-    }
   });
 });
-
-server.listen(PORT, () => console.log(`🚀 Serveri käynnissä portissa ${PORT}`));
