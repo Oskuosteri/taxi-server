@@ -395,7 +395,7 @@ wss.on("connection", (ws) => {
         const customerSocket = clients[customerUsername];
 
         // ✅ Oikein tehty MongoDB-haku:
-        const driverData = await User.findOne({ username: driverId }).lean();
+        const driverData = await User.findOne({ username }).lean();
 
         if (!driverData) {
           ws.send(
