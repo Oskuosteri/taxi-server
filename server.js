@@ -284,13 +284,13 @@ wss.on("connection", (ws) => {
     try {
       const data = JSON.parse(message);
       const decoded = jwt.verify(data.token, JWT_SECRET);
-      const driverId = decoded.username;
+      const username = decoded.username;
 
       if (data.type === "authenticate") {
         ws.userRole = data.role;
-        ws.username = data.username;
-        clients[data.username] = ws;
-        console.log(`✅ Asiakas yhdistetty: ${data.username}`);
+        ws.username = username;
+        clients[username] = ws;
+        console.log(`✅ Käyttäjä "${username}" yhdistetty ja tallennettu.`);
       } else if (data.type === "ride_completed") {
         const { rideId, customerUsername } = data;
         const customerSocket = clients[customerUsername];
@@ -300,7 +300,7 @@ wss.on("connection", (ws) => {
             JSON.stringify({
               type: "ride_completed",
               rideId,
-              driverId,
+              driverId: username,
               date: new Date().toISOString(),
             })
           );
@@ -313,17 +313,17 @@ wss.on("connection", (ws) => {
           );
         }
       } else if (data.type === "driver_login" && decoded.role === "driver") {
-        drivers[driverId] = {
-          id: driverId,
+        drivers[username] = {
+          id: username,
           ws,
           isWorking: false,
           isOnline: false,
           token: data.token,
         };
         ws.send(JSON.stringify({ type: "login_success" }));
-        console.log(`🚖 Kuljettaja ${driverId} kirjautui sisään.`);
+        console.log(`🚖 Kuljettaja ${username} kirjautui sisään.`);
       } else if (data.type === "start_shift") {
-        const driverData = await User.findOne({ username: driverId }).lean();
+        const driverData = await User.findOne({ username }).lean();
         if (!driverData) {
           ws.send(
             JSON.stringify({ type: "error", message: "Kuljettajaa ei löydy" })
@@ -331,8 +331,8 @@ wss.on("connection", (ws) => {
           return;
         }
 
-        drivers[driverId] = {
-          id: driverId,
+        drivers[username] = {
+          id: username,
           ws,
           isWorking: true,
           isOnline: true,
@@ -341,11 +341,11 @@ wss.on("connection", (ws) => {
         };
         ws.send(JSON.stringify({ type: "shift_started" }));
       } else if (data.type === "stop_shift") {
-        if (drivers[driverId]) {
-          drivers[driverId].isWorking = false;
-          drivers[driverId].isOnline = false;
+        if (drivers[username]) {
+          drivers[username].isWorking = false;
+          drivers[username].isOnline = false;
           ws.send(JSON.stringify({ type: "shift_stopped" }));
-          broadcastToClients({ type: "driver_offline", id: driverId });
+          broadcastToClients({ type: "driver_offline", id: username });
         }
       } else if (data.type === "ride_request") {
         if (!activeRideRequests.has(data.rideId)) {
@@ -357,7 +357,7 @@ wss.on("connection", (ws) => {
               driver.ws.send(
                 JSON.stringify({
                   ...data,
-                  customerUsername: data.customerUsername, // ⬅️ Selkeästi lisätty
+                  customerUsername: data.customerUsername,
                 })
               )
             );
