@@ -162,11 +162,14 @@ app.get("/available-drivers", async (req, res) => {
 });
 
 function broadcastToClients(message) {
-  wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN && client.userRole === "client") {
-      client.send(JSON.stringify(message));
-    }
-  });
+  socketRef.current.send(
+    JSON.stringify({
+      type: "ride_accepted",
+      rideId: rideRequest.rideId,
+      customerUsername: rideRequest.customerUsername, // Varmista että tämä rivi löytyy!
+      token: userToken,
+    })
+  );
 }
 
 const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
@@ -379,7 +382,13 @@ wss.on("connection", (ws) => {
         }
       } else if (data.type === "ride_accepted") {
         activeRideRequests.delete(data.rideId);
-        const driverData = await User.findOne({ username: decoded.username });
+
+        const { customerUsername } = data;
+        const customerSocket = clients[customerUsername];
+
+        // ✅ Oikein tehty MongoDB-haku:
+        const driverData = await User.findOne({ username: driverId }).lean();
+
         if (!driverData) {
           ws.send(
             JSON.stringify({
@@ -387,26 +396,35 @@ wss.on("connection", (ws) => {
               message: "Kuljettajan tietoja ei löytynyt",
             })
           );
+          console.error(
+            `❌ Kuljettajan tietoja ei löytynyt käyttäjänimellä: ${driverId}`
+          );
           return;
         }
+
+        console.log("✅ Kuljettajan tiedot MongoDB:stä:", driverData);
 
         const rideConfirmedMessage = {
           type: "ride_confirmed",
           driverName: driverData.username,
-          driverImage: driverData.profileImage || "default-driver.jpg",
-          carImage: driverData.carImage || "default-car.jpg",
+          driverImage:
+            driverData.driverImage || "https://example.com/default-driver.jpg",
+          carImage:
+            driverData.carImage || "https://example.com/default-car.jpg",
           carModel: driverData.carModel || "Tuntematon auto",
           licensePlate: driverData.licensePlate || "???-???",
         };
 
-        wss.clients.forEach((client) => {
-          if (
-            client.readyState === WebSocket.OPEN &&
-            client.userRole === "client"
-          ) {
-            client.send(JSON.stringify(rideConfirmedMessage));
-          }
-        });
+        if (customerSocket && customerSocket.readyState === WebSocket.OPEN) {
+          customerSocket.send(JSON.stringify(rideConfirmedMessage));
+          console.log(
+            `✅ Kuljettajan tiedot lähetetty asiakkaalle: ${customerUsername}`
+          );
+        } else {
+          console.error(
+            `❌ Asiakasta ${customerUsername} ei löydetty tai yhteys suljettu.`
+          );
+        }
       } else {
         ws.send(
           JSON.stringify({ type: "error", message: "Tuntematon viesti" })
