@@ -350,9 +350,17 @@ wss.on("connection", (ws) => {
       } else if (data.type === "ride_request") {
         if (!activeRideRequests.has(data.rideId)) {
           activeRideRequests.add(data.rideId);
+
           Object.values(drivers)
             .filter((d) => d.isWorking && d.ws.readyState === WebSocket.OPEN)
-            .forEach((driver) => driver.ws.send(JSON.stringify(data)));
+            .forEach((driver) =>
+              driver.ws.send(
+                JSON.stringify({
+                  ...data,
+                  customerUsername: data.customerUsername, // ⬅️ Selkeästi lisätty
+                })
+              )
+            );
         }
       } else if (data.type === "location_update") {
         const now = Date.now();
