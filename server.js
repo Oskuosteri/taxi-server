@@ -365,12 +365,12 @@ wss.on("connection", (ws) => {
       } else if (data.type === "location_update") {
         const now = Date.now();
         if (
-          !driverLastUpdate[driverId] ||
-          now - driverLastUpdate[driverId] > 5000
+          !driverLastUpdate[username] ||
+          now - driverLastUpdate[username] > 5000
         ) {
-          driverLastUpdate[driverId] = now;
-          if (drivers[driverId]) {
-            drivers[driverId].location = {
+          driverLastUpdate[username] = now;
+          if (drivers[username]) {
+            drivers[username].location = {
               latitude: data.latitude,
               longitude: data.longitude,
             };
@@ -379,7 +379,7 @@ wss.on("connection", (ws) => {
                 client.send(
                   JSON.stringify({
                     type: "driver_location_update",
-                    driverId,
+                    driverId: username,
                     latitude: data.latitude,
                     longitude: data.longitude,
                   })
@@ -405,7 +405,7 @@ wss.on("connection", (ws) => {
             })
           );
           console.error(
-            `❌ Kuljettajan tietoja ei löytynyt käyttäjänimellä: ${driverId}`
+            `❌ Kuljettajan tietoja ei löytynyt käyttäjänimellä: ${username}`
           );
           return;
         }
