@@ -270,6 +270,7 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 const drivers = {};
+const driverLastUpdate = {};
 
 wss.on("connection", (ws) => {
   console.log("✅ WebSocket-yhteys avattu");
@@ -417,47 +418,51 @@ wss.on("connection", (ws) => {
           }
         });
       } else if (data.type === "location_update") {
-        const driverId = decoded.username;
+        const now = Date.now();
+        if (
+          !driverLastUpdate[driverId] ||
+          now - driverLastUpdate[driverId] > 5000
+        ) {
+          driverLastUpdate[driverId] = now;
 
-        if (drivers[driverId]) {
-          // ✅ Tarkistetaan, että sijainti ei ole undefined
-          if (!data.latitude || !data.longitude) {
-            console.error(`❌ Kuljettajan ${driverId} sijainti ei päivity!`);
-            ws.send(
-              JSON.stringify({
-                type: "error",
-                message: "Virheellinen sijainti",
-              })
-            );
-            return;
-          }
-
-          drivers[driverId].location = {
-            latitude: data.latitude,
-            longitude: data.longitude,
-          };
-
-          console.log(
-            `📍 Kuljettajan ${driverId} sijainti päivitetty: ${data.latitude}, ${data.longitude}`
-          );
-
-          // ✅ Lähetetään asiakkaille päivitetty sijainti
-          wss.clients.forEach((client) => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(
+          if (drivers[driverId]) {
+            if (!data.latitude || !data.longitude) {
+              console.error(`❌ Kuljettajan ${driverId} sijainti ei päivity!`);
+              ws.send(
                 JSON.stringify({
-                  type: "driver_location_update",
-                  driverId: driverId,
-                  latitude: data.latitude,
-                  longitude: data.longitude,
+                  type: "error",
+                  message: "Virheellinen sijainti",
                 })
               );
+              return;
             }
-          });
-        } else {
-          console.error(
-            `❌ Kuljettajaa ${driverId} ei löydetty WebSocket-listasta!`
-          );
+
+            drivers[driverId].location = {
+              latitude: data.latitude,
+              longitude: data.longitude,
+            };
+
+            console.log(
+              `📍 Kuljettajan ${driverId} sijainti päivitetty: ${data.latitude}, ${data.longitude}`
+            );
+
+            wss.clients.forEach((client) => {
+              if (client.readyState === WebSocket.OPEN) {
+                client.send(
+                  JSON.stringify({
+                    type: "driver_location_update",
+                    driverId: driverId,
+                    latitude: data.latitude,
+                    longitude: data.longitude,
+                  })
+                );
+              }
+            });
+          } else {
+            console.error(
+              `❌ Kuljettajaa ${driverId} ei löydetty WebSocket-listasta!`
+            );
+          }
         }
       }
 
