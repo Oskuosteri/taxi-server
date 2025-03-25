@@ -30,7 +30,7 @@ if (!MONGO_URI) {
   process.exit(1);
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
 // ✅ Yhdistetään MongoDB:hen
 mongoose
@@ -461,4 +461,8 @@ wss.on("connection", (ws) => {
       }
     });
   });
+});
+
+server.listen(PORT, () => {
+  console.log(`🚀 Serveri käynnissä portissa ${PORT}`);
 });
