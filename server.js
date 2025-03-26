@@ -287,8 +287,8 @@ app.post("/create-checkout-session", async (req, res) => {
           quantity: 1,
         },
       ],
-      success_url: "https://example.com/success",
-      cancel_url: "https://example.com/cancel",
+      success_url: "pirssi://payment-success",
+      cancel_url: "pirssi://payment-cancel",
     });
 
     res.json({ url: session.url });
