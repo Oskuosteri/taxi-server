@@ -268,6 +268,35 @@ app.post("/register", async (req, res) => {
   }
 });
 
+app.post("/create-checkout-session", async (req, res) => {
+  try {
+    const { amount } = req.body;
+    if (!amount || amount <= 0)
+      return res.status(400).json({ error: "Virheellinen summa" });
+
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ["card"],
+      mode: "payment",
+      line_items: [
+        {
+          price_data: {
+            currency: "eur",
+            product_data: { name: "Taksi kyyti" },
+            unit_amount: Math.round(amount * 100),
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: "https://example.com/success",
+      cancel_url: "https://example.com/cancel",
+    });
+
+    res.json({ url: session.url });
+  } catch (error) {
+    res.status(500).json({ error: "Maksusession luonti epäonnistui" });
+  }
+});
+
 // ✅ WebSocket-palvelin
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
@@ -443,35 +472,6 @@ wss.on("connection", (ws) => {
       ws.send(
         JSON.stringify({ type: "error", message: "Virheellinen viesti" })
       );
-    }
-  });
-
-  app.post("/create-checkout-session", async (req, res) => {
-    try {
-      const { amount } = req.body;
-      if (!amount || amount <= 0)
-        return res.status(400).json({ error: "Virheellinen summa" });
-
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ["card"],
-        mode: "payment",
-        line_items: [
-          {
-            price_data: {
-              currency: "eur",
-              product_data: { name: "Taksi kyyti" },
-              unit_amount: Math.round(amount * 100),
-            },
-            quantity: 1,
-          },
-        ],
-        success_url: "mytaxiapp://success?session_id={CHECKOUT_SESSION_ID}",
-        cancel_url: "mytaxiapp://cancel",
-      });
-
-      res.json({ url: session.url });
-    } catch (error) {
-      res.status(500).json({ error: "Maksusession luonti epäonnistui" });
     }
   });
 
