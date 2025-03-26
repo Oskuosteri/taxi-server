@@ -287,13 +287,30 @@ app.post("/create-checkout-session", async (req, res) => {
           quantity: 1,
         },
       ],
-      success_url: "pirssi://payment-success",
-      cancel_url: "pirssi://payment-cancel",
+      success_url: "https://example.com/success",
+      cancel_url: "https://example.com/cancel",
     });
 
-    res.json({ url: session.url });
+    res.json({ url: session.url, sessionId: session.id });
+  } catch (err) {
+    console.error("❌ Stripe Checkout error:", err);
+    res.status(500).json({ error: "Stripe Checkout epäonnistui" });
+  }
+});
+
+// ✅ Pollausreitti maksun tilan tarkistamiseksi
+app.get("/check-payment-status/:sessionId", async (req, res) => {
+  const { sessionId } = req.params;
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session.payment_status === "paid") {
+      res.json({ paid: true });
+    } else {
+      res.json({ paid: false });
+    }
   } catch (error) {
-    res.status(500).json({ error: "Maksusession luonti epäonnistui" });
+    console.error("❌ Virhe maksun tarkistuksessa:", error);
+    res.status(500).json({ error: "Tarkistus epäonnistui" });
   }
 });
 
