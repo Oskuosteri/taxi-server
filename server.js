@@ -65,7 +65,7 @@ const userSchema = new mongoose.Schema({
   name: String,
   carModel: String,
   licensePlate: String,
-  profileImage: String,
+  driverImage: String,
   carImage: String,
   carType: { type: String },
 });
