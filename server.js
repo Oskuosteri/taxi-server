@@ -162,14 +162,11 @@ app.get("/available-drivers", async (req, res) => {
 });
 
 function broadcastToClients(message) {
-  socketRef.current.send(
-    JSON.stringify({
-      type: "ride_accepted",
-      rideId: rideRequest.rideId,
-      customerUsername: rideRequest.customerUsername, // Varmista että tämä rivi löytyy!
-      token: userToken,
-    })
-  );
+  Object.values(clients).forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(message));
+    }
+  });
 }
 
 const getDistanceFromLatLonInKm = (lat1, lon1, lat2, lon2) => {
