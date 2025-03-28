@@ -476,6 +476,23 @@ wss.on("connection", (ws) => {
             `❌ Asiakasta ${customerUsername} ei löydetty tai yhteys suljettu.`
           );
         }
+      } else if (data.type === "ride_started") {
+        const customerSocket = clients[data.customerUsername];
+        if (customerSocket && customerSocket.readyState === WebSocket.OPEN) {
+          customerSocket.send(
+            JSON.stringify({
+              type: "ride_started",
+              message: "Taksi on saapunut lähtöpaikalle!",
+            })
+          );
+          console.log(
+            `✅ ride_started lähetetty asiakkaalle: ${data.customerUsername}`
+          );
+        } else {
+          console.warn(
+            `❌ Asiakas ${data.customerUsername} ei tavoitettavissa.`
+          );
+        }
       } else {
         ws.send(
           JSON.stringify({ type: "error", message: "Tuntematon viesti" })
