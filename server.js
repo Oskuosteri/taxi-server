@@ -232,7 +232,7 @@ app.post("/create-payment-intent", async (req, res) => {
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(amount * 100), // Stripe käyttää senttejä
       currency: "eur",
-      payment_method_types: ["card"],
+      payment_method_types: ["card", "google_pay", "mobilepay"],
     });
 
     res.json({ clientSecret: paymentIntent.client_secret });
@@ -272,7 +272,7 @@ app.post("/create-checkout-session", async (req, res) => {
       return res.status(400).json({ error: "Virheellinen summa" });
 
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
+      payment_method_types: ["card", "google_pay", "mobilepay"],
       mode: "payment",
       line_items: [
         {
